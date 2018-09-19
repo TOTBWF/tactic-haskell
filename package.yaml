@@ -1,9 +1,9 @@
 name:                tactic-haskell
 version:             0.1.0.0
-github:              "githubuser/tactic-haskell"
+github:              "totbwf/tactic-haskell"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
+author:              "Reed Mullanix"
+maintainer:          "reedmullanix@gmail.com"
 copyright:           "2018 Author name here"
 
 extra-source-files:
@@ -21,6 +21,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- template-haskell >= 2 && < 3
 
 library:
   source-dirs: src
