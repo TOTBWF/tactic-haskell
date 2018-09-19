@@ -12,11 +12,15 @@ main :: IO ()
 main = return ()
 
 
-f = $(tactic [t| forall a b. a -> b -> (a,b)|] $ do
+p = $(tactic [t| forall a b. a -> b -> (a,b)|] $ do
   intro
   x <- intro
   y <- intro
-  intro <..> [use x, use y]
-  )
-  -- intro <..> [use x, use y])
+  intro <..> [use x, use y])
 
+f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
+  intro
+  x <- intro
+  f <- intro
+  elim f
+  assumption)

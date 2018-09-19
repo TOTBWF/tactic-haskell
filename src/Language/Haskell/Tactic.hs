@@ -20,6 +20,7 @@ module Language.Haskell.Tactic
   , (?)
   , with
   , use
+  , assumption
   , intro
   , elim
   , tactic
@@ -29,7 +30,7 @@ import Control.Monad.Writer.Strict
 import Control.Monad.IO.Class
 import Control.Monad.Fail (MonadFail)
 
-import Data.Foldable (fold)
+import Data.Foldable (fold, find)
 
 import Data.String (IsString(..))
 
@@ -112,6 +113,7 @@ instance IsString Doc where
 data Error
   = NoVariables
   | UndefinedVariable Name
+  | AssumptionError Type
   | TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
   | GoalMismatch { tacName :: String, appliedGoal :: Type }
   | UnsolvedGoals [Judgement]
@@ -122,6 +124,7 @@ tacticError e j =
   let errText = case e of
         NoVariables -> "No variables to bring into scope"
         UndefinedVariable x -> "Undefined variable" P.<+> ppr x
+        AssumptionError t -> "Couldn't find any variables of type" P.<+> ppr t
         TypeMismatch{..} -> "Expected Type" P.<+> ppr expectedType P.<+> "but" P.<+> ppr expr P.<+> "has type" P.<+> ppr exprType
         GoalMismatch{..} -> "Tactic" P.<+> P.text tacName P.<+> "doesn't support goals of the form" P.<+> ppr appliedGoal
         NotImplemented t -> P.text t P.<+> "isn't implemented yet"
@@ -172,6 +175,13 @@ mkTactic :: (Judgement -> TacticT Exp) -> Tactic
 mkTactic f = Tac $ \j -> do
   (e, goals) <- runWriterT (f j)
   return $ ProofState goals e
+
+-- | Searches the hypotheses for any type that may match the goal
+assumption :: Tactic
+assumption = mkTactic $ \j@Judgement{..} ->
+  case find ((== goalType) . snd) (Tl.toList $ hypotheses <> hidden) of
+    Just (x, _) -> return $ VarE x
+    Nothing -> lift $ tacticError (AssumptionError goalType) j
 
 intro :: Tactic
 intro = mkTactic $ \j@Judgement{..} -> case goalType of
