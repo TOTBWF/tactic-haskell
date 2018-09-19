@@ -22,6 +22,8 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 - template-haskell >= 2 && < 3
+- pretty >= 1.1 && < 1.2
+- mtl >= 2 && < 3
 
 library:
   source-dirs: src
