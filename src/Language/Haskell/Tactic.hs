@@ -59,10 +59,9 @@ newtype Tac j = Tac { unTac :: j -> Q (ProofState j) }
 type Tactic = Tac Judgement
 type MultiTactic = Tac (ProofState Judgement)
 
-
-
-
 {- Tactic Combinators -}
+
+-- | Identity Tactic. Does absolutely nothing.
 identity :: Tactic
 identity = Tac $ goal
 
@@ -84,24 +83,30 @@ instance Semigroup Tactic where
 instance Monoid Tactic where
   mempty = identity
 
+-- | Run the 1st tactic, and then run each of the tactics in the list on a resulting subgoal.
 (<..>) :: Tactic -> [Tactic] -> Tactic
 t <..> ts = t `compose` (each ts)
 
+-- | Runs the 1st tactic, and if it fails, runs the 2nd>
 orElse :: Tactic -> Tactic -> Tactic
 orElse (Tac t1) (Tac t2) = Tac $ \j -> recover (t2 j) (t1 j)
 
+-- | Combinator version of `orElse`
 (<||>) :: Tactic -> Tactic -> Tactic
 t1 <||> t2 = t1 `orElse` t2
 
+-- | Tries to run the given tactic, and does nothing if it fails.
 try :: Tactic -> Tactic
 try t = t <||> identity
 
+-- | Runs a tactic repeatedly.
 many :: Tactic -> Tactic
 many t = try (t <> many t)
 
 render :: Doc -> String
 render = P.render . P.to_HPJ_Doc
 
+-- | Traces out the proof state at a given point with the provided label
 (?) :: String -> Tactic
 (?) t = Tac $ \j -> do
   reportWarning $ render $ "?" P.<> P.text t P.<> ":" P.<+> ppr j
@@ -137,6 +142,7 @@ lookupHyp' x j =
     Nothing -> lift $ tacticError (UndefinedVariable x) j
 
 -- TODO: Remove variables from hypotheses after with block
+-- | Brings a name from the context into scope
 with :: (Name -> Tactic) -> Tactic
 with f = Tac $ \j ->
   case popHidden j of
@@ -152,6 +158,7 @@ instance Evidence Exp where
 instance Evidence Name where
   toExp = VarE
 
+-- | Uses a piece of evidence to try to prove the goal
 use :: (Evidence e) => e -> Tactic
 use e = mkTactic $ \j -> do
   case cast e of
@@ -183,6 +190,7 @@ assumption = mkTactic $ \j@Judgement{..} ->
     Just (x, _) -> return $ VarE x
     Nothing -> lift $ tacticError (AssumptionError goalType) j
 
+-- | Introduces new hypotheses. Operates on functions and pairs.
 intro :: Tactic
 intro = mkTactic $ \j@Judgement{..} -> case goalType of
   Function a b -> do
@@ -197,6 +205,7 @@ intro = mkTactic $ \j@Judgement{..} -> case goalType of
     return $ TupE mxs
   t -> lift $ tacticError (GoalMismatch "intro" t) j
 
+-- | Does case elimination or function application
 elim :: Name -> Tactic
 elim f = mkTactic $ \j@Judgement{..} -> lookupHyp' f j >>= \case
   Function a b -> do
@@ -210,6 +219,7 @@ elim f = mkTactic $ \j@Judgement{..} -> lookupHyp' f j >>= \case
     return $ LetE [ValD (VarP fx) (NormalB $ AppE (VarE f) (UnboundVarE mx)) []] (UnboundVarE mfx)
   t -> lift $ tacticError (GoalMismatch "elim" t) j
 
+-- | Runs a tactic against a given type
 tactic :: Q Type -> Tactic -> Q Exp
 tactic goal t = do
   g <- goal
