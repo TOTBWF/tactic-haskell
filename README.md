@@ -1,5 +1,6 @@
 # tactic-haskell
-Tactic Metaprogramming as a library!
+Tactic Metaprogramming as a library! This project aims to bring the proof automation
+capabilities of Coq and others to Haskell.
 
 Here's some examples:
 
@@ -19,6 +20,11 @@ f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
   elim f
   assumption)
 ```
+
+## Future Plans
+- Tactics that work on `Rep`, allowing for tactics that can work on any data structure.
+- (True) Dependent Types
+- More exotic types (Quotient types, Intersection Types, etc)
 
 ## Disclaimer
 This is very much a work in progress! `tactic-haskell` makes
