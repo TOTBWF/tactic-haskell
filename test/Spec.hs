@@ -6,7 +6,7 @@
 import Language.Haskell.Tactic
 import Language.Haskell.Tactic.RebindableSyntax
 
-import Prelude (IO, return, ($))
+import Prelude hiding ((>>), (>>=))
 
 main :: IO ()
 main = return ()
@@ -24,3 +24,6 @@ f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
   f <- intro
   elim f
   assumption)
+
+-- foo :: [a] -> Maybe a
+-- foo = $(tactic [t| forall a . [a] -> [a] |] $ many intro <> use '[])

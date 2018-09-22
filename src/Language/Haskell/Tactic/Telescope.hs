@@ -3,6 +3,7 @@
 module Language.Haskell.Tactic.Telescope
   (
     Telescope(..)
+  , empty
   , singleton
   , (@>)
   , foldlWithVar, foldrWithVar
@@ -41,6 +42,9 @@ instance Semigroup (Telescope t) where
 
 instance Monoid (Telescope t) where
   mempty = Empty
+
+empty :: Telescope t
+empty = Empty
 
 singleton :: Name -> t -> Telescope t
 singleton x t = Snoc Empty x t

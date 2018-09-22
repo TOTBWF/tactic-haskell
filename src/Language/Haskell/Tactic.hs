@@ -1,11 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Language.Haskell.Tactic
   ( Tactic
   , Name
@@ -20,9 +22,11 @@ module Language.Haskell.Tactic
   , (?)
   , with
   , use
+  , trustme
   , assumption
   , intro
   , elim
+  , induction
   , tactic
   ) where
 
@@ -30,7 +34,7 @@ import Control.Monad.Writer.Strict
 import Control.Monad.IO.Class
 import Control.Monad.Fail (MonadFail)
 
-import Data.Foldable (fold, find)
+import Data.Foldable hiding (all)
 
 import Data.String (IsString(..))
 
@@ -130,10 +134,15 @@ tacticError e j =
         NoVariables -> "No variables to bring into scope"
         UndefinedVariable x -> "Undefined variable" P.<+> ppr x
         AssumptionError t -> "Couldn't find any variables of type" P.<+> ppr t
-        TypeMismatch{..} -> "Expected Type" P.<+> ppr expectedType P.<+> "but" P.<+> ppr expr P.<+> "has type" P.<+> ppr exprType
-        GoalMismatch{..} -> "Tactic" P.<+> P.text tacName P.<+> "doesn't support goals of the form" P.<+> ppr appliedGoal
+        TypeMismatch{..} ->
+          "Expected Type" P.<+> ppr expectedType P.<+> "but" P.<+> ppr expr P.<+> "has type" P.<+> ppr exprType P.$+$
+            "Expected Type (Debug):" P.<+> (P.text $ show expectedType) P.$+$
+            "Actual Type (Debug):" P.<+> (P.text $ show exprType)
+        GoalMismatch{..} ->
+          "Tactic" P.<+> P.text tacName P.<+> "doesn't support goals of the form" P.<+> ppr appliedGoal P.$+$
+            "Debug:" P.<+> (P.text $ show appliedGoal)
         NotImplemented t -> P.text t P.<+> "isn't implemented yet"
-  in fail $ render $ "Tactic Error:" P.<+> errText P.$$ "Proof State:" P.<+> ppr j
+  in fail $ render $ "Tactic Error:" P.<+> errText P.$+$ "Proof State:" P.<+> ppr j
 
 lookupHyp' :: Name -> Judgement -> TacticT Type
 lookupHyp' x j =
@@ -142,6 +151,7 @@ lookupHyp' x j =
     Nothing -> lift $ tacticError (UndefinedVariable x) j
 
 -- TODO: Remove variables from hypotheses after with block
+-- TODO: Use TH to inspect the name that the name is being given
 -- | Brings a name from the context into scope
 with :: (Name -> Tactic) -> Tactic
 with f = Tac $ \j ->
@@ -149,25 +159,19 @@ with f = Tac $ \j ->
     Just (x, j') -> (unTac $ f x) j'
     Nothing -> tacticError NoVariables j
 
-class (Typeable e) => Evidence e where
-  toExp :: e -> Exp
-
-instance Evidence Exp where
-  toExp = id
-
-instance Evidence Name where
-  toExp = VarE
-
 -- | Uses a piece of evidence to try to prove the goal
-use :: (Evidence e) => e -> Tactic
-use e = mkTactic $ \j -> do
-  case cast e of
-    Just (x :: Name) -> do
-      t <- lookupHyp' x j
-      if t == (goalType j)
-      then return (toExp e)
-      else lift $ tacticError (TypeMismatch (goalType j) (toExp e) t) j
-    Nothing -> lift $ tacticError (NotImplemented "using non-variable evidence") j
+use :: Name -> Tactic
+use x = mkTactic $ \j ->
+  let checkType t =
+        if t == (goalType j)
+        then return (VarE x)
+        else lift $ tacticError (TypeMismatch (goalType j) (VarE x) t) j
+  in case lookupHyp x j of
+    Just t -> checkType t
+    Nothing -> (lift $ reify x) >>= \case
+      VarI _ t _ -> checkType t
+      DataConI _ t _ -> checkType t
+      d -> lift $ tacticError (NotImplemented $ show d) j
 
 {- Tactic Helpers-}
 type TacticT = WriterT (Telescope Judgement) Q
@@ -190,6 +194,10 @@ assumption = mkTactic $ \j@Judgement{..} ->
     Just (x, _) -> return $ VarE x
     Nothing -> lift $ tacticError (AssumptionError goalType) j
 
+{-# WARNING trustme "Completely unsafe, will generate code that will crash" #-}
+trustme :: Tactic
+trustme = mkTactic $ \_ -> lift [| error "trustme called" |]
+
 -- | Introduces new hypotheses. Operates on functions and pairs.
 intro :: Tactic
 intro = mkTactic $ \j@Judgement{..} -> case goalType of
@@ -205,7 +213,7 @@ intro = mkTactic $ \j@Judgement{..} -> case goalType of
     return $ TupE mxs
   t -> lift $ tacticError (GoalMismatch "intro" t) j
 
--- | Does case elimination or function application
+-- | Does function application
 elim :: Name -> Tactic
 elim f = mkTactic $ \j@Judgement{..} -> lookupHyp' f j >>= \case
   Function a b -> do
@@ -219,6 +227,38 @@ elim f = mkTactic $ \j@Judgement{..} -> lookupHyp' f j >>= \case
     return $ LetE [ValD (VarP fx) (NormalB $ AppE (VarE f) (UnboundVarE mx)) []] (UnboundVarE mfx)
   t -> lift $ tacticError (GoalMismatch "elim" t) j
 
+induction :: Name -> Tactic
+induction n = mkTactic $ \j@Judgement{..} -> lookupHyp' n j >>= \case
+  -- Constructor x _ ->
+  --   (lift $ reify x) >>= \case
+  --   TyConI (DataD _ _ tvs _ ctrs _) -> do
+  --     -- For each of the constructors, create an inductive goal
+  --     cs <- for ctrs $ \case
+  --       (NormalC n (fmap snd -> ts)) -> do
+  --         -- Bring all of the types from the constructor into the hypotheses
+  --         (j', ps) <- lift $ foldlM (\(jd, ns) ty -> do
+  --                          x <- newName "_"
+  --                          return $ (extendHyp x ty jd, (VarP x):ns)
+  --                         ) (j, []) ts
+  --         mx <- subgoal j'
+  --         -- Prove the original goal using the assumed stuff
+  --         return $ Match (ConP n (reverse ps)) (NormalB $ UnboundVarE mx) []
+  --       c -> lift $ tacticError (NotImplemented $ "Induction on fancy constructor:" ++ show c) j
+  --     return $ CaseE (VarE x) cs
+    -- i -> lift $ tacticError (NotImplemented $ "Induction on fancy data:" ++ show i) j
+  List t -> do
+    -- Create a subgoal of the empty case
+    emx <- subgoal j
+    -- Create a subgoal for the cons case
+    x <- lift $ newName "x"
+    xs <- lift $ newName "xs"
+    cmx <- subgoal $ extendHyp x t $ extendHyp xs (List t) j
+    -- Build a match clause
+    let consMatch = Match (InfixP (VarP x) '(:) (VarP xs)) (NormalB $ UnboundVarE cmx) []
+    let emptyMatch = Match (ConP '[] []) (NormalB $ UnboundVarE emx) []
+    return $ CaseE (VarE n) [consMatch, emptyMatch]
+  t -> lift $ tacticError (GoalMismatch "induction" t) j
+
 -- | Runs a tactic against a given type
 tactic :: Q Type -> Tactic -> Q Exp
 tactic goal t = do
@@ -226,4 +266,13 @@ tactic goal t = do
   (ProofState goals ext) <- unTac t $ emptyHyp g
   case goals of
     Empty -> return ext
-    js -> fail $ render $ "Unsolved Goals:" P.$$  P.vcat (fmap (ppr . snd) $ Tl.toList js)
+    js -> fail $ render $ "Unsolved Goals:" P.$+$  P.vcat (fmap (ppr . snd) $ Tl.toList js)
+
+-- -- | Runs a tactic against a given type, and creates a s
+-- define :: Q Type -> Tactic -> Q [Dec]
+-- define goal t = do
+--   g <- goal
+--   (ProofState goals ext) <- unTac t $ emptyHyp g
+--   case goals of
+--     Empty -> return ext
+--     js -> fail $ render $ "Unsolved Goals:" P.$+$  P.vcat (fmap (ppr . snd) $ Tl.toList js)
