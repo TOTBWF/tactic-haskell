@@ -1,5 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RebindableSyntax #-}
 {-# OPTIONS_GHC -ddump-splices #-}
 
@@ -25,5 +25,11 @@ f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
   elim f
   assumption)
 
--- foo :: [a] -> Maybe a
--- foo = $(tactic [t| forall a . [a] -> [a] |] $ many intro <> use '[])
+foo :: forall a. [a] -> Maybe a
+foo = $(tactic [t| [a] -> Maybe a |] $ do
+  xs <- intro
+  induction xs <..>
+    [ use [| Nothing :: Maybe a |]
+    , with $ \x -> use [| Just $(useName x) :: Maybe a |]
+    ]
+  )

@@ -19,9 +19,10 @@ module Language.Haskell.Tactic
   , (<||>)
   , try
   , many
-  , (?)
+  , tracepoint
   , with
   , use
+  , useName
   , trustme
   , assumption
   , intro
@@ -111,8 +112,8 @@ render :: Doc -> String
 render = P.render . P.to_HPJ_Doc
 
 -- | Traces out the proof state at a given point with the provided label
-(?) :: String -> Tactic
-(?) t = Tac $ \j -> do
+tracepoint :: String -> Tactic
+tracepoint t = Tac $ \j -> do
   reportWarning $ render $ "?" P.<> P.text t P.<> ":" P.<+> ppr j
   (unTac identity) j
 
@@ -159,19 +160,35 @@ with f = Tac $ \j ->
     Just (x, j') -> (unTac $ f x) j'
     Nothing -> tacticError NoVariables j
 
--- | Uses a piece of evidence to try to prove the goal
-use :: Name -> Tactic
-use x = mkTactic $ \j ->
-  let checkType t =
-        if t == (goalType j)
-        then return (VarE x)
-        else lift $ tacticError (TypeMismatch (goalType j) (VarE x) t) j
-  in case lookupHyp x j of
-    Just t -> checkType t
-    Nothing -> (lift $ reify x) >>= \case
-      VarI _ t _ -> checkType t
-      DataConI _ t _ -> checkType t
-      d -> lift $ tacticError (NotImplemented $ show d) j
+class Evidence e where
+  -- | Uses a piece of evidence to try to prove the goal
+  use :: e -> Tactic
+
+instance Evidence Name where
+  use x = mkTactic $ \j ->
+    let checkType t =
+          if t == (goalType j)
+          then return (VarE x)
+          else lift $ tacticError (TypeMismatch (goalType j) (VarE x) t) j
+    in case lookupHyp x j of
+      Just t -> checkType t
+      Nothing -> (lift $ reify x) >>= \case
+        VarI _ t _ -> checkType t
+        DataConI _ t _ -> checkType t
+        d -> lift $ tacticError (NotImplemented $ show d) j
+
+instance Evidence (Q Exp) where
+  use qexp = mkTactic $ \j -> do
+    exp <- lift $ qexp
+    case exp of
+      (SigE e typ) -> 
+        if typ == (goalType j)
+        then return e
+        else lift $ tacticError (TypeMismatch (goalType j) e typ) j
+      e -> lift $ tacticError (NotImplemented $ show e) j
+
+useName :: Name -> Q Exp
+useName x = return $ VarE x
 
 {- Tactic Helpers-}
 type TacticT = WriterT (Telescope Judgement) Q
