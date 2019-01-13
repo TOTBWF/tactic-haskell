@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Language.Haskell.Tactic.Judgement
   ( Judgement(..)
   , emptyHyp
@@ -29,25 +29,25 @@ data Judgement = Judgement
 instance MetaSubst Judgement
 
 instance Ppr Judgement where
-  ppr Judgement{..} = ppr hypotheses <+> char '⊢' <+> ppr goalType
+  ppr Judgement{ hypotheses, goalType } = ppr hypotheses <+> char '⊢' <+> ppr goalType
 
 emptyHyp :: Type -> Judgement
 emptyHyp t = Judgement { hypotheses = mempty, hidden = mempty, goalType = t }
 
 extendHyp :: Name -> Type -> Judgement -> Judgement
-extendHyp x t j@Judgement{..} = j{ hidden = hidden @> (x,t) }
+extendHyp x t j@Judgement{ hidden } = j{ hidden = hidden @> (x,t) }
 
 withGoal :: Type -> Judgement -> Judgement
-withGoal t j@Judgement{..} = j{ goalType = t }
+withGoal t j@Judgement{ goalType } = j{ goalType = t }
 
 lookupHyp :: Name -> Judgement -> Maybe Type
-lookupHyp x j@Judgement{..} = Tl.lookup x hypotheses
+lookupHyp x j@Judgement{ hypotheses } = Tl.lookup x hypotheses
 
 removeHyp :: Name -> Judgement -> Judgement
-removeHyp x j@Judgement{..} = j { hypotheses = Tl.remove x hypotheses }
+removeHyp x j@Judgement{ hypotheses } = j { hypotheses = Tl.remove x hypotheses }
 
 popHidden :: Judgement -> Maybe (Name, Judgement)
-popHidden j@Judgement{..} =
+popHidden j@Judgement{ hypotheses, hidden } =
   case hidden of
     Snoc tl x t -> Just (x, j { hidden = tl, hypotheses = hypotheses @> (x,t) })
     Empty -> Nothing
