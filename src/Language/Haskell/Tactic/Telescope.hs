@@ -5,6 +5,7 @@ module Language.Haskell.Tactic.Telescope
     Telescope(..)
   , empty
   , singleton
+  , extend
   , (@>)
   , foldlWithVar, foldrWithVar
   , foldlMWithVar, foldrMWithVar
@@ -48,6 +49,9 @@ empty = Empty
 
 singleton :: Name -> t -> Telescope t
 singleton x t = Snoc Empty x t
+
+extend :: Name -> t -> Telescope t -> Telescope t
+extend x t tl = Snoc tl x t
 
 (@>) :: Telescope t -> (Name, t) -> Telescope t
 tl @> (v, t) = Snoc tl v t

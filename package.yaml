@@ -24,6 +24,7 @@ dependencies:
 - template-haskell >= 2 && < 3
 - pretty >= 1.1 && < 1.2
 - mtl >= 2 && < 3
+- ghc >= 8.4.3 && < 9
 
 library:
   source-dirs: src

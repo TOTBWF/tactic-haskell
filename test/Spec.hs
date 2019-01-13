@@ -1,35 +1,57 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RebindableSyntax #-}
 {-# OPTIONS_GHC -ddump-splices #-}
 
+import Language.Haskell.TH
 import Language.Haskell.Tactic
-import Language.Haskell.Tactic.RebindableSyntax
 
 import Prelude hiding ((>>), (>>=))
 
 main :: IO ()
 main = return ()
 
-
-p = $(tactic [t| forall a b. a -> b -> (a,b)|] $ do
-  intro
+tactic "foo" [t| forall a b. a -> b -> (a,b)|] $ do
+  intro_
   x <- intro
   y <- intro
-  intro <..> [use x, use y])
+  split <..> [exact x, exact y]
 
-f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
-  intro
-  x <- intro
+tactic "bar" [t| forall a b c. (a -> b -> c) -> a -> b -> c |] $ do
+  intro_
   f <- intro
-  elim f
-  assumption)
+  x <- intro
+  y <- intro
+  apply f <..> [exact x, exact y]
 
-foo :: forall a. [a] -> Maybe a
-foo = $(tactic [t| [a] -> Maybe a |] $ do
-  xs <- intro
-  induction xs <..>
-    [ use [| Nothing :: Maybe a |]
-    , with $ \x -> use [| Just $(useName x) :: Maybe a |]
-    ]
-  )
+-- p :: forall a b. a -> b -> (a, b)
+-- p = $(solveWith [t| a -> b -> (a,b)|] $ do
+--   x <- lam
+--   y <- lam
+--   tuple <..> [use x, use y])
+  -- tuple <..> [use x, use y])
+  -- each [])
+  -- intro <..> [use x, use y])
+
+-- foo :: a
+-- foo = $(reify 'foo *> fail "Oh no")
+
+-- f :: forall a b. a -> (a -> b) -> b
+-- f = $(solveWith [t| a -> (a -> b) -> b |] $ do
+--   x <- lam
+--   f <- lam
+--   v <- elim f)
+-- f = $(tactic [t| forall a b. a -> (a -> b) -> b|] $ do
+--   intro
+--   x <- intro
+--   f <- intro
+--   elim f
+--   assumption)
+
+-- foo :: forall a. [a] -> Maybe a
+-- foo = $(tactic [t| [a] -> Maybe a |] $ do
+--   xs <- intro
+--   induction xs <..>
+--     [ use [| Nothing :: Maybe a |]
+--     , with $ \x -> use [| Just $(useName x) :: Maybe a |]
+--     ]
+--   )
