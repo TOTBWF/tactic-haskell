@@ -5,10 +5,10 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE DataKinds #-}
 module Language.Haskell.Tactic
   ( Tactic(..)
   , (<..>)
@@ -47,48 +47,55 @@ import Language.Haskell.Tactic.Telescope (Telescope(..))
 import qualified Language.Haskell.Tactic.Telescope as Tl
 import Language.Haskell.Tactic.TH
 
-newtype Tactic ext jdg m a = Tactic { runTactic :: jdg -> m (ProofState ext (a, jdg))  }
-type MultiTactic ext jdg m a = Tactic ext (ProofState ext jdg) m a
+newtype T a = T { runT :: Q a }
+  deriving (Functor, Applicative, Monad, MonadFail)
 
-runTactic_ :: (Monad m) => Tactic ext jdg m () -> jdg -> m (ProofState ext jdg)
+instance Alternative T where
+  empty = fail "empty"
+  (T t1) <|> (T t2) = T $ recover t2 t1
+
+newtype Tactic jdg a = Tactic { runTactic :: jdg -> T (ProofState (a, jdg))  }
+type MultiTactic jdg a = Tactic (ProofState jdg) a
+
+runTactic_ :: Tactic jdg () -> jdg -> T (ProofState jdg)
 runTactic_ t j = fmap snd <$> (runTactic t j)
 
-instance (Functor m) => Functor (Tactic ext jdg m) where
-  fmap f t = Tactic $ \j -> fmap (fmap (first f)) $ runTactic t $ j -- fmap (first (fmap f)) $ runTactic t $ j
+instance Functor (Tactic jdg) where
+  fmap f t = Tactic $ \j -> fmap (fmap (first f)) $ runTactic t $ j
 
-instance (Monad m) => Applicative (Tactic ext jdg m) where
+instance Applicative (Tactic jdg) where
   pure a = Tactic $ \j -> pure (pure (a, j))
   (<*>) = ap
 
-instance (Monad m) => Monad (Tactic ext jdg m) where
+instance Monad (Tactic jdg) where
   return = pure
   t >>= k = Tactic $ \j -> do
     ps <- runTactic t $ j
     join <$> traverse (\(a, j') -> runTactic (k a) $ j') ps
 
-instance (MonadPlus m) => Alternative (Tactic ext jdg m) where
+instance Alternative (Tactic jdg) where
   empty = Tactic $ \_ -> empty
   (Tactic t1) <|> (Tactic t2) = Tactic $ \j -> (t1 j) <|> (t2 j)
 
-each :: (Monad m) => [Tactic ext jdg m ()] -> MultiTactic ext jdg m ()
+each :: [Tactic jdg ()] -> MultiTactic jdg ()
 each ts = Tactic $ fmap (fmap ((),) . snd) . mapAccumLM applyTac ts
   where
     applyTac (t:ts) j = ((ts,) . fmap snd) <$> (runTactic t) j
     applyTac [] j            = (([],) . fmap snd) <$> (runTactic $ pure ()) j
 
-(<..>) :: (Monad m) => Tactic ext jdg m () -> [Tactic ext jdg m ()] -> Tactic ext jdg m ()
+(<..>) :: Tactic jdg () -> [Tactic jdg ()] -> Tactic jdg ()
 t <..> ts = Tactic $ \j -> (fmap ((),) . join) <$> (runTactic_ (each ts) =<< runTactic_ t j)
 
 -- Some helpers for tactic construction
-newtype TacticT ctx jdg m a = TacticT { unTacticT :: StateT [(ctx, jdg)] m a }
+newtype TacticM ctx jdg m a = TacticT { unTacticT :: StateT [(ctx, jdg)] m a }
   deriving (Functor, Applicative, Monad, MonadTrans, MonadFail)
 
-subgoal :: (Monad m) => ctx -> jdg -> TacticT ctx jdg m ()
-subgoal c j = TacticT $ modify ((c,j):)
+subgoal :: (MonadState [(ctx, jdg)] m) => ctx -> jdg -> m ()
+subgoal c j = modify ((c,j):)
 
-mkTactic :: (Monad m) => (jdg -> TacticT ctx jdg m ([ext] -> ext)) -> Tactic ext jdg m ctx
+mkTactic :: (jdg -> StateT [(ctx, jdg)] T ([Exp] -> Exp)) -> Tactic jdg ctx
 mkTactic t = Tactic $ \j -> do
-  (ext, subgoals) <- runStateT (unTacticT $ t j) []
+  (ext, subgoals) <- runStateT (t j) []
   pure $ ProofState (reverse subgoals) ext
 
 -- Error handling/printing
@@ -124,43 +131,43 @@ tacticError e =
 
 data Var = Var Name Type
 
-exact :: Var -> Tactic Exp Type Q ()
+exact :: Var -> Tactic Type ()
 exact (Var x t) = mkTactic $ \g -> do
   if (t == g) then return (\_ -> VarE x) else tacticError $ TypeMismatch g (VarE x) t
 
-intro_ :: Tactic Exp Type Q ()
+intro_ :: Tactic Type ()
 intro_ = mkTactic $ \case
   (ForallT _ _ t) -> do
     subgoal () t
     return head
   t -> tacticError $ GoalMismatch "intro_" t
 
-intro :: Tactic Exp Type Q Var
+intro :: Tactic Type Var
 intro = mkTactic $ \case
   (Arrow a b) -> do
-    x <- lift $ newName "x"
+    x <- lift $ T $ newName "x"
     subgoal (Var x a) b
     return $ \[body] -> LamE [VarP x] body
   t -> tacticError $ GoalMismatch "intro" t
 
-split :: Tactic Exp Type Q ()
+split :: Tactic Type ()
 split = mkTactic $ \case
   (Tuple ts) -> do
     traverse_ (subgoal ()) ts
     return TupE
   t -> tacticError $ GoalMismatch "tuple" t
 
-apply :: Var -> Tactic Exp Type Q ()
+apply :: Var -> Tactic Type ()
 apply (Var f t) = mkTactic $ \g -> case t of
   (Function args ret) | ret == g -> do
     traverse_ (subgoal ()) args
     return $ foldl AppE (VarE f)
   t -> tacticError $ GoalMismatch "apply" t
 
-tactic :: String -> Q Type -> Tactic Exp Type Q () -> Q [Dec]
+tactic :: String -> Q Type -> Tactic Type () -> Q [Dec]
 tactic nm ty tac = do
   fnm <- newName nm
-  (ProofState subgoals ext) <- fmap snd <$> (runTactic tac =<< ty)
+  (ProofState subgoals ext) <- runT $ fmap snd <$> (runTactic tac =<< (T ty))
   case subgoals of
     [] -> return [ValD (VarP fnm) (NormalB $ ext []) []]
     _ -> tacticError $ UnsolvedGoals subgoals
