@@ -1,6 +1,16 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Language.Haskell.Tactic.Internal.TH
+-- Copyright   :  (c) Reed Mullanix 2019
+-- License     :  BSD-style
+-- Maintainer  :  reedmullanix@gmail.com
+--
+--
+-- =TH
+-- This module exports some handy TH AST pattern synonyms
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
-module Language.Haskell.Tactic.TH
+module Language.Haskell.Tactic.Internal.TH
   ( pattern Arrow
   , pattern Function
   , pattern Tuple

@@ -5,23 +5,9 @@
 import Language.Haskell.TH
 import Language.Haskell.Tactic
 
-import Prelude hiding ((>>), (>>=))
-
 main :: IO ()
 main = return ()
 
-tactic "foo" [t| forall a b. a -> b -> (a,b)|] $ do
-  intro_
-  x <- intro
-  y <- intro
-  split <..> [exact x, exact y]
-
-tactic "bar" [t| forall a b c. (a -> b -> c) -> a -> b -> c |] $ do
-  intro_
-  f <- intro
-  x <- intro
-  y <- intro
-  apply f <..> [exact x, exact y]
 
 -- p :: forall a b. a -> b -> (a, b)
 -- p = $(solveWith [t| a -> b -> (a,b)|] $ do
