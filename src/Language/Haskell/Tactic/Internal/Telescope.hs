@@ -1,8 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveGeneric #-}
 module Language.Haskell.Tactic.Internal.Telescope
-  (
-    Telescope(..)
+  ( Telescope(..)
   , empty
   , singleton
   , extend
@@ -10,6 +9,7 @@ module Language.Haskell.Tactic.Internal.Telescope
   , foldlWithVar, foldrWithVar
   , foldlMWithVar, foldrMWithVar
   , toList
+  , fromList
   , filter
   , lookup
   , find
@@ -88,6 +88,9 @@ filter f (Snoc tl x a) | f a = Snoc (filter f tl) x a
 
 toList :: Telescope v t -> [(v,t)]
 toList = foldrWithVar (\x t -> (:) (x,t)) []
+
+fromList :: [(v,t)] -> Telescope v t
+fromList = foldl (\tl (x,t) -> Snoc tl x t) empty
 
 lookup :: (Eq v) => v -> Telescope v t -> Maybe t
 lookup _ Empty = Nothing

@@ -3,18 +3,18 @@
 {-# OPTIONS_GHC -ddump-splices #-}
 module Sample where
 
+import Control.Applicative
+
 import Language.Haskell.Tactic
 
 tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
-  intro "x"
-  intro "y"
+  intros ["x", "y"]
   split
   assumption
 
 tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   forall
-  intro "x"
-  intro "f"
+  intros ["x", "f"]
   apply "f"
   exact "x"

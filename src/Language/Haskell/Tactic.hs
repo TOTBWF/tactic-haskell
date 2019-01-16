@@ -15,6 +15,7 @@ module Language.Haskell.Tactic
   , assumption
   , forall
   , intro
+  , intros
   , split
   , apply
   , tactic
@@ -76,6 +77,15 @@ intro n = mkTactic $ \(Judgement hy g) ->
       subgoal (Judgement (hy @> (x,a)) b)
       return $ \[body] -> LamE [VarP x] body
     t -> tacticError $ GoalMismatch "intro" t
+
+intros :: [String] -> Tactic Judgement ()
+intros ns = mkTactic $ \(Judgement hy g) ->
+  case g of
+    (Function args t) -> do
+      ns' <- traverse fresh ns
+      let hy' = Tl.fromList $ zip ns' args
+      subgoal (Judgement (hy <> hy') t)
+      return $ \[body] -> LamE (fmap VarP ns') body
 
 -- | Applies to goals of the form @(a,b, ..)@.
 -- Generates subgoals for every type contained in the tuple.
