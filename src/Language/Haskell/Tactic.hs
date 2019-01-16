@@ -12,6 +12,7 @@ module Language.Haskell.Tactic
   ( Tactic
   , (<..>)
   , exact
+  , assumption
   , forall
   , intro
   , split
@@ -38,6 +39,13 @@ exact n = mkTactic $ \j@(Judgement hy g) ->
     Just (x, t) -> if (t == g) then return (\_ -> VarE x) else tacticError $ TypeMismatch g (VarE x) t
     Nothing -> tacticError $ UndefinedHypothesis n
 
+-- | Searches the hypotheses, looking for one that matches the goal type.
+assumption :: Tactic Judgement ()
+assumption = mkTactic $ \j@(Judgement hy g) ->
+  case Tl.find (== g) hy of
+    Just (x,_) -> return (\_ -> VarE x)
+    Nothing -> tacticError $ GoalMismatch "assumption" g
+
 -- intro_ :: Tactic Judgement ()
 -- intro_ = mkTactic $ \(Judgement hy g) ->
 --   case g of
@@ -55,6 +63,7 @@ forall = mkTactic $ \(Judgement hy g) ->
     (ForallT _ _ t) -> do
       subgoal $ Judgement hy t
       return $ head
+    t -> tacticError $ GoalMismatch "intro" t
 
 -- | Applies to goals of the form @a -> b@.
 -- Brings @a@ in as a hypothesis, and generates

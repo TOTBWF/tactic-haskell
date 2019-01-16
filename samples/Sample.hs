@@ -9,7 +9,8 @@ tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
   intro "x"
   intro "y"
-  split <..> [exact "x", exact "y"]
+  split
+  assumption
 
 tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   forall
