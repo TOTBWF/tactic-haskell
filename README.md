@@ -13,12 +13,12 @@ tactic "pair" [t| forall a b. a -> b -> (a,b)|] $ do
 ```
 
 ```
-tactic "&" [t| forall a b. a -> (a -> b) -> b|] $ do
+tactic "fapply" [t| forall a b. a -> (a -> b) -> b|] $ do
   forall
   intro "x"
   intro "f"
   apply "f"
-  exact "x")
+  exact "x"
 ```
 
 ## Future Plans
