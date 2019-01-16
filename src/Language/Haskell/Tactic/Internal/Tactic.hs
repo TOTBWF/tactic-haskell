@@ -20,7 +20,8 @@ module Language.Haskell.Tactic.Internal.Tactic
   , mkTactic
   , subgoal
   , fresh
-  -- , define_
+  , wildcard
+  , (?)
   , TacticError(..)
   , tacticError
   , tactic
@@ -94,10 +95,6 @@ data TacticState = TacticState
   , hypothesisVars :: Set String
   }
 
--- Need to be careful about how this works...
--- When taking the names from mkTactic, we obtain the nameBase.
---
-
 addVar :: String -> StateT TacticState T Name
 addVar nm = do
   modify (\s -> s { hypothesisVars = Set.insert nm $ hypothesisVars s })
@@ -106,6 +103,9 @@ addVar nm = do
 -- | Tactic creation monad.
 newtype TacticM a = TacticM { unTacticM :: (StateT TacticState T) a }
   deriving (Functor, Applicative, Monad, MonadFail)
+
+liftT :: T a -> TacticM a
+liftT t = TacticM $ StateT $ \s -> (,s) <$> t
 
 -- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
 mkTactic :: (Judgement -> TacticM ([Exp] -> Exp)) -> Tactic Judgement ()
@@ -127,8 +127,12 @@ fresh nm = TacticM $ gets (isDefined nm . hypothesisVars) >>= \case
     isDefined :: String -> Set String -> Bool
     isDefined nm s = (head nm == '_') || (Set.member nm s)
 
--- wildcard :: TacticM Name
--- wildcard = _h
+-- | Defines a wildcard hypothesis variable.
+wildcard :: TacticM Name
+wildcard = TacticM $ do
+  -- The way this works is pretty hacky...
+  c <- gets (Set.filter ((== '_') . head ) . hypothesisVars)
+  addVar ("_" ++ show c)
 
 {- Error Handling -}
 render :: Doc -> String
@@ -164,6 +168,15 @@ tacticError e =
           P.text "Unsolved Subgoals" <+> P.vcat (fmap ppr subgoals)
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
+
+tacticPrint :: String -> TacticM ()
+tacticPrint = liftT . T . reportWarning
+
+(?) :: Tactic Judgement () -> String -> Tactic Judgement ()
+t ? lbl = Tactic $ \j -> do
+  ps <- runTactic t j
+  T $ reportWarning $ render $ P.text "Proof State" <+> P.parens (P.text lbl) $+$ ppr (fmap snd ps)
+  return ps
 
 -- | Runs a tactic script against a goal, and generates a @'Dec'@.
 tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]

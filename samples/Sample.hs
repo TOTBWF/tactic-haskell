@@ -10,7 +10,7 @@ import Language.Haskell.Tactic
 tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
   intros ["x", "y"]
-  split
+  split ? "f"
   assumption
 
 tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do

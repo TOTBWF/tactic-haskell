@@ -12,11 +12,14 @@
 module Language.Haskell.Tactic
   ( Tactic
   , (<..>)
+  , (?)
   , exact
   , assumption
   , forall
   , intro
+  , intro_
   , intros
+  , intros_
   , split
   , apply
   , tactic
@@ -79,11 +82,26 @@ intro n = mkTactic $ \(Judgement hy g) ->
       return $ \[body] -> LamE [VarP x] body
     t -> tacticError $ GoalMismatch "intro" t
 
+intro_ :: Tactic Judgement ()
+intro_ = mkTactic $ \(Judgement hy g) ->
+  case g of
+    (Arrow a b) -> do
+      x <- wildcard
+      subgoal (Judgement (hy @> (x,a)) b)
+      return $ \[body] -> LamE [VarP x] body
+    t -> tacticError $ GoalMismatch "intro" t
+
 -- | Applies to goals of the form @a -> b -> c -> ...@
 -- Brings each of the variables in as a hypothesis,
 -- and generates subgoals for each of them.
 intros :: [String] -> Tactic Judgement ()
 intros ns = traverse_ intro ns
+
+-- | Applies to goals of the form @a -> b -> c -> ...@
+-- Adds hypothesis for every single argument, and a subgoal
+-- for the return type.
+intros_ :: [String] -> Tactic Judgement ()
+intros_ ns = traverse_ intro ns
 
 -- | Applies to goals of the form @(a,b, ..)@.
 -- Generates subgoals for every type contained in the tuple.

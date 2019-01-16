@@ -18,6 +18,9 @@ module Language.Haskell.Tactic.Internal.ProofState
   ) where
 
 import Language.Haskell.TH
+import Language.Haskell.TH.Ppr
+import Language.Haskell.TH.PprLib hiding (empty, (<>))
+import qualified Language.Haskell.TH.PprLib as P
 
 import Control.Monad(ap)
 
@@ -26,6 +29,10 @@ import Control.Monad(ap)
 -- and creates a new extract.
 data ProofState jdg = ProofState [jdg] ([Exp] -> Exp)
   deriving (Functor, Foldable, Traversable)
+
+instance (Ppr jdg) => Ppr (ProofState jdg) where
+  ppr (ProofState subgoals _) =
+    vcat $ fmap (\(i,sg) -> int i P.<> text ")" <+> ppr sg) $ zip [1 ..] subgoals
 
 -- | Creates a proof state with no subgoals.
 axiom :: Exp -> ProofState jdg
