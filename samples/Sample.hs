@@ -22,7 +22,3 @@ tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   intros ["x", "f"]
   apply "f"
   exact "x"
-
--- tactic "ind" [t| List -> Int |] $ do
---   intro "xs"
--- $(reify ''List >>= (reportError . show) >> return [])

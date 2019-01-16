@@ -4,15 +4,15 @@ capabilities of Coq and others to Haskell.
 
 Here's some examples:
 
-```
+```haskell
 tactic "pair" [t| forall a b. a -> b -> (a,b)|] $ do
-  intro
-  intro "x"
-  intro "y"
-  split <..> [exact "x", exact "y"]
+  forall
+  intros_
+  split
+  assumption
 ```
 
-```
+```haskell
 tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   forall
   intro "x"
@@ -20,6 +20,13 @@ tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   apply "f"
   exact "x"
 ```
+
+```haskell
+tactic "foo" [t| forall a b c. a -> (a -> b) -> (b -> c) -> (a,c)|] $ do
+  auto 5
+```
+
+
 For more examples, see the `samples/` directory.
 
 ## Future Plans
