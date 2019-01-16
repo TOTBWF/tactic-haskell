@@ -2,6 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -78,14 +79,11 @@ intro n = mkTactic $ \(Judgement hy g) ->
       return $ \[body] -> LamE [VarP x] body
     t -> tacticError $ GoalMismatch "intro" t
 
+-- | Applies to goals of the form @a -> b -> c -> ...@
+-- Brings each of the variables in as a hypothesis,
+-- and generates subgoals for each of them.
 intros :: [String] -> Tactic Judgement ()
-intros ns = mkTactic $ \(Judgement hy g) ->
-  case g of
-    (Function args t) -> do
-      ns' <- traverse fresh ns
-      let hy' = Tl.fromList $ zip ns' args
-      subgoal (Judgement (hy <> hy') t)
-      return $ \[body] -> LamE (fmap VarP ns') body
+intros ns = traverse_ intro ns
 
 -- | Applies to goals of the form @(a,b, ..)@.
 -- Generates subgoals for every type contained in the tuple.
