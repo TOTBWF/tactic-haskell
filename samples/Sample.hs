@@ -5,16 +5,24 @@ module Sample where
 
 import Control.Applicative
 
+import Language.Haskell.TH
 import Language.Haskell.Tactic
 
 tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
-  intros ["x", "y"]
-  split ? "f"
+  intros_
+  split
   assumption
+
+tactic "foo" [t| forall a b c. a -> (a -> b) -> (b -> c) -> (a,c)|] $ do
+  auto 5
 
 tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   forall
   intros ["x", "f"]
   apply "f"
   exact "x"
+
+-- tactic "ind" [t| List -> Int |] $ do
+--   intro "xs"
+-- $(reify ''List >>= (reportError . show) >> return [])

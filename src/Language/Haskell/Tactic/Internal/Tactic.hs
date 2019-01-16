@@ -16,6 +16,8 @@
 module Language.Haskell.Tactic.Internal.Tactic
   ( Tactic
   , (<..>)
+  , try
+  , choice
   , TacticM
   , mkTactic
   , subgoal
@@ -84,6 +86,15 @@ each ts = Tactic $ fmap (fmap ((),) . snd) . mapAccumLM applyTac ts
     applyTac (t:ts) j = ((ts,) . fmap snd) <$> (runTactic t) j
     applyTac [] j            = (([],) . fmap snd) <$> (runTactic $ pure ()) j
 
+try :: Tactic Judgement () -> Tactic Judgement ()
+try t = t <|> (pure ())
+
+choice :: (Judgement -> Tactic Judgement ()) -> Tactic Judgement ()
+choice c = Tactic $ \j -> runTactic (c j) j
+
+-- We need to be able to match on the goal type...
+--
+
 -- | @t '<..>' ts@ applies the tactic @t@, then applies each of the 'ts' to
 -- the resulting subgoals
 (<..>) :: Tactic jdg () -> [Tactic jdg ()] -> Tactic jdg ()
@@ -131,7 +142,7 @@ fresh nm = TacticM $ gets (isDefined nm . hypothesisVars) >>= \case
 wildcard :: TacticM Name
 wildcard = TacticM $ do
   -- The way this works is pretty hacky...
-  c <- gets (Set.filter ((== '_') . head ) . hypothesisVars)
+  c <- gets (Set.size . Set.filter ((== '_') . head ) . hypothesisVars)
   addVar ("_" ++ show c)
 
 {- Error Handling -}
@@ -144,7 +155,7 @@ data TacticError
   | UndefinedHypothesis String
   | DuplicateHypothesis String
   | InvalidHypothesisName String
-  | UnsolvedGoals [Judgement]
+  | UnsolvedGoals (ProofState Judgement)
   | NotImplemented String
 
 -- | Throws a tactic error.
@@ -164,14 +175,15 @@ tacticError e =
           P.text "Duplicate Hypothesis" <+> P.text v
         InvalidHypothesisName v ->
           P.text "Invalid Hypothesis Name" <+> P.text v
-        UnsolvedGoals subgoals ->
-          P.text "Unsolved Subgoals" <+> P.vcat (fmap ppr subgoals)
+        UnsolvedGoals ps ->
+          P.text "Unsolved Subgoals" $+$ ppr ps
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 
 tacticPrint :: String -> TacticM ()
 tacticPrint = liftT . T . reportWarning
 
+-- | Prints out the proof state after the provided tactic was executed.
 (?) :: Tactic Judgement () -> String -> Tactic Judgement ()
 t ? lbl = Tactic $ \j -> do
   ps <- runTactic t j
@@ -182,7 +194,7 @@ t ? lbl = Tactic $ \j -> do
 tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]
 tactic nm ty tac = do
   fnm <- newName nm
-  (ProofState subgoals ext) <- runT $ fmap snd <$> (runTactic tac =<< (J.empty <$> T ty))
+  p@(ProofState subgoals ext) <- runT $ fmap snd <$> (runTactic tac =<< (J.empty <$> T ty))
   case subgoals of
     [] -> return [ValD (VarP fnm) (NormalB $ ext []) []]
-    _ -> tacticError $ UnsolvedGoals subgoals
+    _ -> tacticError $ UnsolvedGoals p

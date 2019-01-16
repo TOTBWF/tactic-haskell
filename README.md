@@ -20,6 +20,7 @@ tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
   apply "f"
   exact "x"
 ```
+For more examples, see the `samples/` directory.
 
 ## Future Plans
 - (True) Dependent Types

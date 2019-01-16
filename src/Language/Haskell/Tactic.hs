@@ -13,6 +13,7 @@ module Language.Haskell.Tactic
   ( Tactic
   , (<..>)
   , (?)
+  , try
   , exact
   , assumption
   , forall
@@ -22,8 +23,11 @@ module Language.Haskell.Tactic
   , intros_
   , split
   , apply
+  , auto
   , tactic
   ) where
+
+import Control.Applicative
 
 import Data.Foldable
 
@@ -50,14 +54,6 @@ assumption = mkTactic $ \j@(Judgement hy g) ->
   case Tl.find (== g) hy of
     Just (x,_) -> return (\_ -> VarE x)
     Nothing -> tacticError $ GoalMismatch "assumption" g
-
--- intro_ :: Tactic Judgement ()
--- intro_ = mkTactic $ \(Judgement hy g) ->
---   case g of
---     (Arrow a b) -> do
---       v <- define_ a
---       subgoal (Judgement (hy @> ("x",v)) b)
---       return $ \[body] -> LamE [VarP $ varName v] body
 
 -- | Used to discharge any @forall@ statements at the begining
 -- of a polymorphic type signature. This will hopefully not exist
@@ -100,8 +96,8 @@ intros ns = traverse_ intro ns
 -- | Applies to goals of the form @a -> b -> c -> ...@
 -- Adds hypothesis for every single argument, and a subgoal
 -- for the return type.
-intros_ :: [String] -> Tactic Judgement ()
-intros_ ns = traverse_ intro ns
+intros_ :: Tactic Judgement ()
+intros_ = many intro_ >> pure ()
 
 -- | Applies to goals of the form @(a,b, ..)@.
 -- Generates subgoals for every type contained in the tuple.
@@ -123,3 +119,21 @@ apply f = mkTactic $ \j@(Judgement hy g) ->
       return $ foldl AppE (VarE n)
     Just (_, t) -> tacticError $ GoalMismatch "apply" t
     Nothing -> tacticError $ UndefinedHypothesis f
+
+-- | Looks through the context, trying to find a function that could potentially be applied.
+apply_ :: Tactic Judgement ()
+apply_ = mkTactic $ \j@(Judgement hy g) ->
+  case Tl.find (\case (Function args ret) -> ret == g; _ -> False) hy of
+    Just (n, (Function args ret)) -> do
+      traverse_ (subgoal . Judgement hy) args
+      return $ foldl AppE (VarE n)
+    Nothing -> tacticError $ GoalMismatch "apply_" g
+
+-- | Tries to automatically solve a given goal.
+auto :: Int -> Tactic Judgement ()
+auto 0 = pure ()
+auto n = do
+  try forall
+  try intros_
+  try (split <|> assumption <|> apply_)
+  auto (n - 1)
