@@ -1,15 +1,40 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Language.Haskell.Tactic.Internal.TH
+-- Copyright   :  (c) Reed Mullanix 2019
+-- License     :  BSD-style
+-- Maintainer  :  reedmullanix@gmail.com
+--
+--
+-- =TH
+-- This module exports some handy TH AST pattern synonyms
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
-module Language.Haskell.Tactic.TH
-  ( pattern Function
+module Language.Haskell.Tactic.Internal.TH
+  ( pattern Arrow
+  , pattern Function
   , pattern Tuple
   , pattern Constructor
   , pattern List
   ) where
 
+import Data.Bifunctor
+
 import Language.Haskell.TH
 
-pattern Function t1 t2 = AppT (AppT ArrowT t1) t2
+pattern Arrow t1 t2 = AppT (AppT ArrowT t1) t2
+
+function :: Type -> Maybe ([Type], Type)
+function (Arrow t1 t2) =
+  let ts = go t2
+  in Just $ (t1:init ts, last ts)
+  where
+    go :: Type -> [Type]
+    go (Arrow t1 t2) = t1:go t2
+    go t = [t]
+function _ = Nothing
+
+pattern Function args ret <- (function -> Just (args, ret))
 
 tuple :: Type -> Maybe [Type]
 tuple = go []
