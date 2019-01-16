@@ -5,8 +5,15 @@ module Sample where
 
 import Language.Haskell.Tactic
 
-tactic "foo" [t| forall a b. a -> b -> (a,b) |] $ do
+tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
   intro "x"
   intro "y"
   split <..> [exact "x", exact "y"]
+
+tactic "&" [t| forall a b. a -> (a -> b) -> b |] $ do
+  forall
+  intro "x"
+  intro "f"
+  apply "f"
+  exact "x"
