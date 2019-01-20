@@ -66,6 +66,16 @@ instance Alt (Tactic) where
 try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
 
+(<..>) :: Tactic () -> [Tactic ()] -> Tactic ()
+(Tactic t) <..> ts = Tactic $ StateT $ \j ->
+  ProofStateT $ flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t j)
+  where
+    applyTac :: ((), Judgement) -> Client ((), Judgement) Exp (StateT [Tactic ()] (ExceptT TacticError T)) Exp
+    applyTac (_, j) = do
+      t <- gets (unTactic . head)
+      modify tail
+      hoist lift $ unProofStateT $ runStateT t j
+
 runTactic :: Tactic () -> Judgement -> T (Exp, [Judgement])
 runTactic (Tactic t) j = do
   r <- runExceptT $ flip runStateT [] $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t j)
