@@ -62,15 +62,13 @@ data TacticState = TacticState
   , boundVars :: Set String
   }
 
-instance Alt (Tactic) where
-  (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
+instance Alt (Tactic) where (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
 
 try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
 
 (<@>) :: Tactic () -> [Tactic ()] -> Tactic ()
-(Tactic t) <@> ts = Tactic $ StateT $ \j ->
-  ProofStateT $ flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t j)
+(Tactic t) <@> ts = Tactic $ StateT $ \j -> ProofStateT $ flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t j)
   where
     applyTac :: ((), TacticState) -> Client ((), TacticState) Exp (StateT [Tactic ()] (ExceptT TacticError Q)) Exp
     applyTac (_, j) = do
@@ -115,10 +113,11 @@ wildcard = do
   bindVar ("_" ++ show c)
 
 -- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
-mkTactic :: (Judgement -> Tac ()) -> Tactic ()
+mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
 mkTactic f = Tactic $ do
   j <- gets (goal)
-  f j
+  e <- f j
+  lift $ axiom e
 
 
 {- Error Handling -}
@@ -158,11 +157,8 @@ hoistError e =
 warning :: Doc -> Tac ()
 warning d = liftQ $ reportWarning $ render d
 
-subgoal :: Judgement -> Tac Judgement
-subgoal j = do
-  s <- get
-  s' <- lift $ ProofStateT $ request (s { goal = j })
-  return $ goal s'
+subgoal :: Judgement -> Tac Exp
+subgoal j = StateT $ \s -> ProofStateT $ request (error "subgoal is broken...", s { goal = j})
 
 tactic :: String -> Q Type -> Tactic () -> Q [Dec]
 tactic nm qty tac = do

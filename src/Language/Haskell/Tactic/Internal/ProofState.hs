@@ -67,3 +67,8 @@ instance (MonadError err m) => MonadError err (ProofStateT m) where
 -- Create a @'ProofState'@ with no subgoals.
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
+
+-- subgoal :: (Monad m) => jdg -> ProofStateT m Exp
+-- subgoal j = ProofStateT $ do
+--   e <- request j
+--   _h $ e
