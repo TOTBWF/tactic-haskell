@@ -17,15 +17,12 @@ module Language.Haskell.Tactic.Internal.Tactic
   , Alt(..)
   , (<@>)
   , try
-  -- , choice
-  -- , TacticM
-  -- , mkTactic
-  -- , subgoal
+  , mkTactic
   , fresh
   , wildcard
+  , warning
   , subgoal
-  -- , (?)
-  -- , tactic
+  , tactic
   ) where
 
 import Data.Functor.Alt
@@ -117,15 +114,14 @@ wildcard = do
   c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
   bindVar ("_" ++ show c)
 
--- -- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
--- mkTactic :: (Judgement -> TacticM ([Exp] -> Exp)) -> Tactic Judgement ()
--- mkTactic t = Tactic $ \j@(Judgement hyps _) -> do
---   (ext, s) <- runStateT (unTacticM $ t j) (TacticState [] (Set.fromList $ fmap (nameBase . fst) $ Tl.toList hyps))
---   pure $ ProofState (reverse $ zip (repeat ()) $ subgoals s) ext
+-- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
+mkTactic :: (Judgement -> Tac ()) -> Tactic ()
+mkTactic f = Tactic $ do
+  j <- gets (goal)
+  f j
 
 
 {- Error Handling -}
-
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
   | GoalMismatch { tacName :: String, appliedGoal :: Type }
@@ -168,19 +164,11 @@ subgoal j = do
   s' <- lift $ ProofStateT $ request (s { goal = j })
   return $ goal s'
 
--- | Prints out the proof state after the provided tactic was executed.
--- (?) :: Tactic () -> String -> Tactic ()
--- (Tactic t) ? lbl = Tactic $ StateT $ \s -> do
---   warning $ P.text "Proof State" <+> P.parens (P.text lbl)
---   ((), s') <- runStateT t s
---   warning $ ppr $ goal s'
---   subgoal s'
-
--- -- | Runs a tactic script against a goal, and generates a @'Dec'@.
--- tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]
--- tactic nm ty tac = do
---   fnm <- newName nm
---   p@(ProofState subgoals ext) <- runT $ fmap snd <$> (runTactic tac =<< (J.empty <$> T ty))
---   case subgoals of
---     [] -> return [ValD (VarP fnm) (NormalB $ ext []) []]
---     _ -> tacticError $ UnsolvedGoals p
+tactic :: String -> Q Type -> Tactic () -> Q [Dec]
+tactic nm qty tac = do
+  decName <- newName nm
+  ty <- qty
+  (ext, subgoals) <- runTactic tac $ J.empty ty
+  case subgoals of
+    [] -> return [ValD (VarP decName) (NormalB $ ext) []]
+    _ -> hoistError $ UnsolvedGoals subgoals
