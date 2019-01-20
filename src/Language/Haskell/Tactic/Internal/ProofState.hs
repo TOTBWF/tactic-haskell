@@ -12,7 +12,7 @@
 -- However, there are a couple of interesting points. Namely, @'ProofState' jdg@
 -- is parameterized, which means that @'ProofState'@ becomes a @'Monad'@!
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Language.Haskell.Tactic.Internal.ProofState
   ( ProofStateT(..)
   , axiom
@@ -26,20 +26,23 @@ module Language.Haskell.Tactic.Internal.ProofState
 import Data.Functor.Alt
 import Control.Monad
 import Control.Monad.Except
+import Control.Monad.Fail as F
 import Control.Monad.Trans
 import Control.Monad.IO.Class
 
 import Pipes.Core
 
 import Language.Haskell.TH
+import Language.Haskell.TH.Syntax hiding (lift)
+import Language.Haskell.Tactic.Internal.T
 
 newtype ProofStateT m jdg = ProofStateT { unProofStateT :: Client jdg Exp m Exp }
 
 instance (Monad m) => Functor (ProofStateT m) where
   fmap f (ProofStateT p) = ProofStateT $ (request . f) >\\ p
 
-instance (MonadError e m) => Alt (ProofStateT m) where
-  (ProofStateT p1) <!> (ProofStateT p2) = ProofStateT $ p1 `catchError` (const p2)
+-- instance () => Alt (ProofStateT m) where
+--   (ProofStateT p1) <!> (ProofStateT p2) = ProofStateT $
 
 instance (Monad m) => Applicative (ProofStateT m) where
   pure a = ProofStateT $ request a
@@ -52,10 +55,13 @@ instance (Monad m) => Monad (ProofStateT m) where
 instance MonadTrans (ProofStateT ) where
   lift m = ProofStateT $ request =<< (lift m)
 
+instance (MonadFail m) => MonadFail (ProofStateT m) where
+  fail s = ProofStateT $ lift $ F.fail s
+
 instance (MonadIO m) => MonadIO (ProofStateT m) where
   liftIO m = ProofStateT $ request =<< (liftIO m)
 
--- | Create a @'ProofState'@ with no subgoals.
+-- Create a @'ProofState'@ with no subgoals.
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
 

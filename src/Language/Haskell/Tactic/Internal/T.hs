@@ -12,13 +12,15 @@ module Language.Haskell.Tactic.Internal.T
 
 import Control.Applicative
 import Control.Monad.Fail (MonadFail)
+import Control.Monad.IO.Class
 
 import Language.Haskell.TH
+import Language.Haskell.TH.Syntax
 
 -- | This monad exists soley to provide an @'Alternative'
 -- instance to the @'Q' Monad.
 newtype T a = T { runT :: Q a }
-  deriving (Functor, Applicative, Monad, MonadFail)
+  deriving (Functor, Applicative, Monad, MonadFail, MonadIO, Quasi)
 
 instance Alternative T where
   empty = fail "empty"
