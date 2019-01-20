@@ -16,7 +16,6 @@
 module Language.Haskell.Tactic.Internal.ProofState
   ( ProofStateT(..)
   , axiom
-  , subgoal
   ) where
 
 -- import Language.Haskell.TH.Ppr
@@ -65,6 +64,6 @@ instance (MonadIO m) => MonadIO (ProofStateT m) where
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
 
--- | Creates a @'ProofState'@ with a subgoal.
-subgoal :: (Monad m) => jdg -> ProofStateT m jdg
-subgoal j = ProofStateT $ request j
+-- -- | Creates a @'ProofState'@ with a subgoal.
+-- subgoal :: (Monad m) => jdg -> ProofStateT m jdg
+-- subgoal j = ProofStateT $ request j

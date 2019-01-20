@@ -22,7 +22,8 @@ module Language.Haskell.Tactic.Internal.Tactic
   -- , subgoal
   -- , fresh
   -- , wildcard
-  -- , (?)
+  , subgoal
+  , (?)
   -- , TacticError(..)
   -- , tacticError
   -- , tactic
@@ -36,8 +37,6 @@ import Control.Monad.Fail (MonadFail)
 import Control.Monad.Morph
 
 import Data.Bifunctor
--- import Data.Set (Set)
--- import qualified Data.Set as Set
 import Pipes.Core
 import Pipes.Lift
 
@@ -166,15 +165,20 @@ hoistError e =
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 
--- tacticPrint :: String -> TacticM ()
--- tacticPrint = liftT . T . reportWarning
+warning :: Doc -> ProofStateT (ExceptT TacticError T) ()
+warning d = lift $ lift $ qReport False $ render d
 
--- -- | Prints out the proof state after the provided tactic was executed.
--- (?) :: Tactic Judgement () -> String -> Tactic Judgement ()
--- t ? lbl = Tactic $ \j -> do
---   ps <- runTactic t j
---   T $ reportWarning $ render $ P.text "Proof State" <+> P.parens (P.text lbl) $+$ ppr (fmap snd ps)
---   return ps
+subgoal :: Judgement -> ProofStateT (ExceptT TacticError T) ((), Judgement)
+subgoal j = ProofStateT $ do
+  request ((), j)
+
+-- | Prints out the proof state after the provided tactic was executed.
+(?) :: Tactic () -> String -> Tactic ()
+(Tactic t) ? lbl = Tactic $ StateT $ \j -> do
+  warning $ P.text "Proof State" <+> P.parens (P.text lbl)
+  ((), j') <- runStateT t j
+  warning $ ppr j'
+  subgoal j'
 
 -- -- | Runs a tactic script against a goal, and generates a @'Dec'@.
 -- tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]
