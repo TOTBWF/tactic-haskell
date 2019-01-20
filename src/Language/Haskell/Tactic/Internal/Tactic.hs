@@ -9,7 +9,7 @@
 -- = Tactics
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Language.Haskell.Tactic.Internal.Tactic
   ( Tactic
@@ -57,23 +57,28 @@ import Language.Haskell.Tactic.Internal.ProofState
 
 -- | A @'Tactic'@ is simply a function from a 'Judgement' to a @'ProofState'@.
 -- However, we add an extra parameter 'a' so that @'Tactic'@ can become a @'Monad'@.
-newtype Tactic a = Tactic { unTactic :: StateT Judgement (ProofStateT T) a  }
+newtype Tactic a = Tactic { unTactic :: StateT Judgement (ProofStateT (ExceptT TacticError T)) a  }
   deriving (Functor, Applicative, Monad, MonadFail, MonadIO)
 
+instance Alt (Tactic) where
+  (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
+
+try :: Tactic () -> Tactic ()
+try t = t <!> (pure ())
+
 runTactic :: Tactic () -> Judgement -> T (Exp, [Judgement])
-runTactic (Tactic t) j =
-  fmap (second reverse)
-  $ flip runStateT []
-  $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t j)
+runTactic (Tactic t) j = do
+  r <- runExceptT $ flip runStateT [] $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t j)
+  case r of
+    Left err -> hoistError err
+    Right res -> return res
   where
-    server :: jdg -> Server jdg Exp (StateT [jdg] T) Exp
+    server :: jdg -> Server jdg Exp (StateT [jdg] (ExceptT TacticError T)) Exp
     server j = do
       modify (j:)
-      hole <- lift $ lift $ qNewName "_"
+      hole <- lift $ lift $ lift $ qNewName "_"
       respond (UnboundVarE hole) >>= server
 
--- try :: Tactic () -> Tactic ()
--- try t = t <!> (pure ())
 
 -- choice :: (Judgement -> Tactic Judgement ()) -> Tactic Judgement ()
 -- choice c = Tactic $ \j -> runTactic (c j) j
@@ -131,40 +136,40 @@ runTactic (Tactic t) j =
 --   c <- gets (Set.size . Set.filter ((== '_') . head ) . hypothesisVars)
 --   addVar ("_" ++ show c)
 
--- {- Error Handling -}
--- render :: Doc -> String
--- render = P.render . P.to_HPJ_Doc
+{- Error Handling -}
 
--- data TacticError
---   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
---   | GoalMismatch { tacName :: String, appliedGoal :: Type }
---   | UndefinedHypothesis String
---   | DuplicateHypothesis String
---   | InvalidHypothesisName String
---   | UnsolvedGoals (ProofState Judgement)
---   | NotImplemented String
+data TacticError
+  = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
+  | GoalMismatch { tacName :: String, appliedGoal :: Type }
+  | UndefinedHypothesis String
+  | DuplicateHypothesis String
+  | InvalidHypothesisName String
+  | UnsolvedGoals [Judgement]
+  | NotImplemented String
 
--- -- | Throws a tactic error.
--- tacticError :: (MonadFail m) => TacticError -> m a
--- tacticError e =
---   let errText = case e of
---         TypeMismatch{ expectedType, expr, exprType } ->
---           P.text "Expected Type" <+> ppr expectedType <+> P.text "but" <+> ppr expr <+> P.text "has type" <+> ppr exprType $+$
---             P.text "Expected Type (Debug):" <+> (P.text $ show expectedType) $+$
---             P.text "Actual Type (Debug):" <+> (P.text $ show exprType)
---         GoalMismatch{ tacName, appliedGoal } ->
---           P.text "Tactic" <+> P.text tacName <+> P.text "doesn't support goals of the form" <+> ppr appliedGoal $+$
---             P.text "Debug:" <+> (P.text $ show appliedGoal)
---         UndefinedHypothesis v ->
---           P.text "Undefined Hypothesis" <+> P.text v
---         DuplicateHypothesis v ->
---           P.text "Duplicate Hypothesis" <+> P.text v
---         InvalidHypothesisName v ->
---           P.text "Invalid Hypothesis Name" <+> P.text v
---         UnsolvedGoals ps ->
---           P.text "Unsolved Subgoals" $+$ ppr ps
---         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
---   in fail $ render $ P.text "Tactic Error:" <+> errText
+render :: Doc -> String
+render = P.render . P.to_HPJ_Doc
+
+hoistError :: (MonadFail m) => TacticError -> m a
+hoistError e =
+  let errText = case e of
+        TypeMismatch{ expectedType, expr, exprType } ->
+          P.text "Expected Type" <+> ppr expectedType <+> P.text "but" <+> ppr expr <+> P.text "has type" <+> ppr exprType $+$
+            P.text "Expected Type (Debug):" <+> (P.text $ show expectedType) $+$
+            P.text "Actual Type (Debug):" <+> (P.text $ show exprType)
+        GoalMismatch{ tacName, appliedGoal } ->
+          P.text "Tactic" <+> P.text tacName <+> P.text "doesn't support goals of the form" <+> ppr appliedGoal $+$
+            P.text "Debug:" <+> (P.text $ show appliedGoal)
+        UndefinedHypothesis v ->
+          P.text "Undefined Hypothesis" <+> P.text v
+        DuplicateHypothesis v ->
+          P.text "Duplicate Hypothesis" <+> P.text v
+        InvalidHypothesisName v ->
+          P.text "Invalid Hypothesis Name" <+> P.text v
+        UnsolvedGoals ps ->
+          P.text "Unsolved Subgoals" $+$ ppr ps
+        NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
+  in fail $ render $ P.text "Tactic Error:" <+> errText
 
 -- tacticPrint :: String -> TacticM ()
 -- tacticPrint = liftT . T . reportWarning

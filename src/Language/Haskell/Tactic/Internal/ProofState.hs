@@ -12,7 +12,7 @@
 -- However, there are a couple of interesting points. Namely, @'ProofState' jdg@
 -- is parameterized, which means that @'ProofState'@ becomes a @'Monad'@!
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Language.Haskell.Tactic.Internal.ProofState
   ( ProofStateT(..)
   , axiom
@@ -41,8 +41,8 @@ newtype ProofStateT m jdg = ProofStateT { unProofStateT :: Client jdg Exp m Exp 
 instance (Monad m) => Functor (ProofStateT m) where
   fmap f (ProofStateT p) = ProofStateT $ (request . f) >\\ p
 
--- instance () => Alt (ProofStateT m) where
---   (ProofStateT p1) <!> (ProofStateT p2) = ProofStateT $
+instance (MonadError err m) => Alt (ProofStateT m) where
+  (ProofStateT p1) <!> (ProofStateT p2) = ProofStateT $ p1 `catchError` (const p2)
 
 instance (Monad m) => Applicative (ProofStateT m) where
   pure a = ProofStateT $ request a
