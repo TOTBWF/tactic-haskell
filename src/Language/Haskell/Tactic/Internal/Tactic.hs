@@ -13,8 +13,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Language.Haskell.Tactic.Internal.Tactic
   ( Tactic
-  -- , (<..>)
-  -- , try
+  , Alt(..)
+  , (<@>)
+  , try
   -- , choice
   -- , TacticM
   -- , mkTactic
@@ -66,8 +67,8 @@ instance Alt (Tactic) where
 try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
 
-(<..>) :: Tactic () -> [Tactic ()] -> Tactic ()
-(Tactic t) <..> ts = Tactic $ StateT $ \j ->
+(<@>) :: Tactic () -> [Tactic ()] -> Tactic ()
+(Tactic t) <@> ts = Tactic $ StateT $ \j ->
   ProofStateT $ flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t j)
   where
     applyTac :: ((), Judgement) -> Client ((), Judgement) Exp (StateT [Tactic ()] (ExceptT TacticError T)) Exp
@@ -90,22 +91,6 @@ runTactic (Tactic t) j = do
       respond (UnboundVarE hole) >>= server
 
 
--- choice :: (Judgement -> Tactic Judgement ()) -> Tactic Judgement ()
--- choice c = Tactic $ \j -> runTactic (c j) j
-
--- -- We need to be able to match on the goal type...
--- --
-
--- -- | @t '<..>' ts@ applies the tactic @t@, then applies each of the 'ts' to
--- -- the resulting subgoals
--- (<..>) :: Tactic jdg () -> [Tactic jdg ()] -> Tactic jdg ()
--- t <..> ts = Tactic $ \j -> (fmap ((),) . join) <$> (runTactic_ (each ts) =<< runTactic_ t j)
-
--- -- | State for the @'Tactic'@ construction helper.
--- data TacticState = TacticState
---   { subgoals :: [Judgement]
---   , hypothesisVars :: Set String
---   }
 
 -- addVar :: String -> StateT TacticState T Name
 -- addVar nm = do
