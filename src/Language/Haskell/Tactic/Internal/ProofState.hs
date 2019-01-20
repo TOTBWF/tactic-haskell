@@ -34,8 +34,6 @@ import Control.Monad.IO.Class
 import Pipes.Core
 
 import Language.Haskell.TH
-import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.Tactic.Internal.T
 
 newtype ProofStateT m jdg = ProofStateT { unProofStateT :: Client jdg Exp m Exp }
 
@@ -69,7 +67,3 @@ instance (MonadError err m) => MonadError err (ProofStateT m) where
 -- Create a @'ProofState'@ with no subgoals.
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
-
--- -- | Creates a @'ProofState'@ with a subgoal.
--- subgoal :: (Monad m) => jdg -> ProofStateT m jdg
--- subgoal j = ProofStateT $ request j
