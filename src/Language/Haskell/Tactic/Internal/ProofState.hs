@@ -12,6 +12,8 @@
 -- However, there are a couple of interesting points. Namely, @'ProofState' jdg@
 -- is parameterized, which means that @'ProofState'@ becomes a @'Monad'@!
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 module Language.Haskell.Tactic.Internal.ProofState
   ( ProofStateT(..)
@@ -59,6 +61,10 @@ instance (MonadFail m) => MonadFail (ProofStateT m) where
 
 instance (MonadIO m) => MonadIO (ProofStateT m) where
   liftIO m = ProofStateT $ request =<< (liftIO m)
+
+instance (MonadError err m) => MonadError err (ProofStateT m) where
+  throwError err = ProofStateT $ throwError err
+  catchError (ProofStateT m) handler = ProofStateT $ catchError m (unProofStateT . handler)
 
 -- Create a @'ProofState'@ with no subgoals.
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
