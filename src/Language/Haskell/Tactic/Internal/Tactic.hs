@@ -22,9 +22,9 @@ module Language.Haskell.Tactic.Internal.Tactic
   -- , mkTactic
   -- , subgoal
   , fresh
-  -- , wildcard
+  , wildcard
   , subgoal
-  , (?)
+  -- , (?)
   -- , tactic
   ) where
 
@@ -58,7 +58,7 @@ import Language.Haskell.Tactic.Internal.ProofState
 newtype Tactic a = Tactic { unTactic :: StateT TacticState (ProofStateT (ExceptT TacticError Q)) a  }
   deriving (Functor, Applicative, Monad, MonadFail, MonadIO, MonadError TacticError)
 
-type ProofState = ProofStateT (ExceptT TacticError Q)
+type Tac = StateT TacticState (ProofStateT (ExceptT TacticError Q))
 
 data TacticState = TacticState
   { goal :: Judgement
@@ -94,37 +94,28 @@ runTactic (Tactic t) j = do
       hole <- lift $ lift $ lift $ newName "_"
       respond (UnboundVarE hole) >>= server
 
--- bindVar :: String -> g
-
--- bindVar :: String -> StateT TacticState T Name
--- bindVar nm = do
---   modify (\s -> s { hypothesisVars = Set.insert nm $ hypothesisVars s })
---   lift $ T $ newName nm
-
-liftQ :: Q a -> StateT TacticState ProofState a
+liftQ :: Q a -> Tac a
 liftQ = lift . lift . lift
 
-bindVar :: String -> StateT TacticState ProofState Name
+bindVar :: String -> Tac Name
 bindVar nm = do
   modify (\s -> s { boundVars = Set.insert nm $ boundVars s })
   liftQ $ newName nm
 
-fresh :: String -> Tactic Name
+fresh :: String -> Tac Name
 fresh "" = throwError $ InvalidHypothesisName "\"\""
-fresh nm = Tactic $ gets (isDefined nm . boundVars) >>= \case
+fresh nm = gets (isDefined nm . boundVars) >>= \case
   True -> throwError $ DuplicateHypothesis nm
   False -> bindVar nm
   where
     isDefined :: String -> Set String -> Bool
     isDefined nm s = (head nm == '_') || (Set.member nm s)
 
-
--- -- | Tactic creation monad.
--- newtype TacticM a = TacticM { unTacticM :: (StateT TacticState T) a }
---   deriving (Functor, Applicative, Monad, MonadFail)
-
--- liftT :: T a -> TacticM a
--- liftT t = TacticM $ StateT $ \s -> (,s) <$> t
+wildcard :: Tac Name
+wildcard = do
+  -- The way this works is pretty hacky...
+  c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
+  bindVar ("_" ++ show c)
 
 -- -- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
 -- mkTactic :: (Judgement -> TacticM ([Exp] -> Exp)) -> Tactic Judgement ()
@@ -132,12 +123,6 @@ fresh nm = Tactic $ gets (isDefined nm . boundVars) >>= \case
 --   (ext, s) <- runStateT (unTacticM $ t j) (TacticState [] (Set.fromList $ fmap (nameBase . fst) $ Tl.toList hyps))
 --   pure $ ProofState (reverse $ zip (repeat ()) $ subgoals s) ext
 
--- -- | Defines a wildcard hypothesis variable.
--- wildcard :: TacticM Name
--- wildcard = TacticM $ do
---   -- The way this works is pretty hacky...
---   c <- gets (Set.size . Set.filter ((== '_') . head ) . hypothesisVars)
---   addVar ("_" ++ show c)
 
 {- Error Handling -}
 
@@ -174,20 +159,22 @@ hoistError e =
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 
-warning :: Doc -> ProofState ()
-warning d = lift $ lift $ reportWarning $ render d
+warning :: Doc -> Tac ()
+warning d = liftQ $ reportWarning $ render d
 
-subgoal :: TacticState -> ProofState ((), TacticState)
-subgoal j = ProofStateT $ do
-  request ((), j)
+subgoal :: Judgement -> Tac Judgement
+subgoal j = do
+  s <- get
+  s' <- lift $ ProofStateT $ request (s { goal = j })
+  return $ goal s'
 
 -- | Prints out the proof state after the provided tactic was executed.
-(?) :: Tactic () -> String -> Tactic ()
-(Tactic t) ? lbl = Tactic $ StateT $ \s -> do
-  warning $ P.text "Proof State" <+> P.parens (P.text lbl)
-  ((), s') <- runStateT t s
-  warning $ ppr $ goal s'
-  subgoal s'
+-- (?) :: Tactic () -> String -> Tactic ()
+-- (Tactic t) ? lbl = Tactic $ StateT $ \s -> do
+--   warning $ P.text "Proof State" <+> P.parens (P.text lbl)
+--   ((), s') <- runStateT t s
+--   warning $ ppr $ goal s'
+--   subgoal s'
 
 -- -- | Runs a tactic script against a goal, and generates a @'Dec'@.
 -- tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]
