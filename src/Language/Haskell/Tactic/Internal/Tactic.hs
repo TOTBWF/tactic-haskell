@@ -7,160 +7,152 @@
 --
 --
 -- = Tactics
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Language.Haskell.Tactic.Internal.Tactic
-  ( Tactic
-  , (<..>)
+  ( Tactic(..)
+  , TacticError(..)
+  , Alt(..)
+  , (<@>)
+  , (?)
   , try
-  , choice
-  , TacticM
   , mkTactic
-  , subgoal
   , fresh
   , wildcard
-  , (?)
-  , TacticError(..)
-  , tacticError
+  , warning
+  , subgoal
   , tactic
   ) where
-import Control.Applicative
-import Control.Monad.Reader
+
+import Data.Functor.Alt
+import Control.Monad.Except
 import Control.Monad.State.Strict
 import Control.Monad.Fail (MonadFail)
+import Control.Monad.Morph
 
-import Data.Foldable
-import Data.Maybe
 import Data.Bifunctor
 import Data.Set (Set)
 import qualified Data.Set as Set
 
+import Pipes.Core
+import Pipes.Lift
 import qualified Text.PrettyPrint as P (render)
 import Language.Haskell.TH
 import Language.Haskell.TH.Ppr hiding (split)
-import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
+import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$), ($$))
 import qualified Language.Haskell.TH.PprLib as P
 
-import Data.Traversable.Extensions
 
-import Language.Haskell.Tactic.Internal.T
 import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import qualified Language.Haskell.Tactic.Internal.Judgement as J
 import Language.Haskell.Tactic.Internal.Telescope (Telescope, (@>))
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 import Language.Haskell.Tactic.Internal.ProofState
 
--- | A @'Tactic'@ is simply a function from a 'jdg' to a @'ProofState'@.
+-- | A @'Tactic'@ is simply a function from a 'Judgement' to a @'ProofState'@.
 -- However, we add an extra parameter 'a' so that @'Tactic'@ can become a @'Monad'@.
-newtype Tactic jdg a = Tactic { runTactic :: jdg -> T (ProofState (a, jdg))  }
+newtype Tactic a = Tactic { unTactic :: StateT TacticState (ProofStateT (ExceptT TacticError Q)) a  }
+  deriving (Functor, Applicative, Monad, MonadFail, MonadIO, MonadError TacticError)
 
-type MultiTactic jdg a = Tactic (ProofState jdg) a
+type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)) a
 
-instance Functor (Tactic jdg) where
-  fmap f t = Tactic $ \j -> fmap (fmap (first f)) $ runTactic t $ j
-
-instance Applicative (Tactic jdg) where
-  pure a = Tactic $ \j -> pure (pure (a, j))
-  (<*>) = ap
-
-instance Monad (Tactic jdg) where
-  return = pure
-  t >>= k = Tactic $ \j -> do
-    ps <- runTactic t $ j
-    join <$> traverse (\(a, j') -> runTactic (k a) $ j') ps
-
-instance Alternative (Tactic jdg) where
-  empty = Tactic $ \_ -> empty
-  (Tactic t1) <|> (Tactic t2) = Tactic $ \j -> (t1 j) <|> (t2 j)
-
-runTactic_ :: Tactic jdg () -> jdg -> T (ProofState jdg)
-runTactic_ t j = fmap snd <$> (runTactic t j)
-
-each :: [Tactic jdg ()] -> MultiTactic jdg ()
-each ts = Tactic $ fmap (fmap ((),) . snd) . mapAccumLM applyTac ts
-  where
-    applyTac (t:ts) j = ((ts,) . fmap snd) <$> (runTactic t) j
-    applyTac [] j            = (([],) . fmap snd) <$> (runTactic $ pure ()) j
-
-try :: Tactic Judgement () -> Tactic Judgement ()
-try t = t <|> (pure ())
-
-choice :: (Judgement -> Tactic Judgement ()) -> Tactic Judgement ()
-choice c = Tactic $ \j -> runTactic (c j) j
-
--- We need to be able to match on the goal type...
---
-
--- | @t '<..>' ts@ applies the tactic @t@, then applies each of the 'ts' to
--- the resulting subgoals
-(<..>) :: Tactic jdg () -> [Tactic jdg ()] -> Tactic jdg ()
-t <..> ts = Tactic $ \j -> (fmap ((),) . join) <$> (runTactic_ (each ts) =<< runTactic_ t j)
-
--- | State for the @'Tactic'@ construction helper.
 data TacticState = TacticState
-  { subgoals :: [Judgement]
-  , hypothesisVars :: Set String
+  { goal :: Judgement
+  , boundVars :: Set String
   }
 
-addVar :: String -> StateT TacticState T Name
-addVar nm = do
-  modify (\s -> s { hypothesisVars = Set.insert nm $ hypothesisVars s })
-  lift $ T $ newName nm
+instance Alt (Tactic) where (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
 
--- | Tactic creation monad.
-newtype TacticM a = TacticM { unTacticM :: (StateT TacticState T) a }
-  deriving (Functor, Applicative, Monad, MonadFail)
+try :: Tactic () -> Tactic ()
+try t = t <!> (pure ())
 
-liftT :: T a -> TacticM a
-liftT t = TacticM $ StateT $ \s -> (,s) <$> t
+(<@>) :: Tactic () -> [Tactic ()] -> Tactic ()
+(Tactic t) <@> ts = Tactic $ StateT $ \s -> ProofStateT $
+  flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t s)
+  where
+    applyTac :: ((), TacticState) -> Client ((), TacticState) Exp (StateT [Tactic ()] (ExceptT TacticError Q)) Exp
+    applyTac (_, s) = do
+      t <- gets (unTactic . head)
+      modify tail
+      hoist lift $ unProofStateT $ runStateT t s
 
--- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
-mkTactic :: (Judgement -> TacticM ([Exp] -> Exp)) -> Tactic Judgement ()
-mkTactic t = Tactic $ \j@(Judgement hyps _) -> do
-  (ext, s) <- runStateT (unTacticM $ t j) (TacticState [] (Set.fromList $ fmap (nameBase . fst) $ Tl.toList hyps))
-  pure $ ProofState (reverse $ zip (repeat ()) $ subgoals s) ext
+(?) :: Tactic () -> String -> Tactic ()
+(Tactic t) ? lbl = Tactic $ StateT $ \j -> ProofStateT $ do
+  (e, sg) <- flip runStateT [] $ distribute $ collectSubgoals >\\ (hoist lift $ unProofStateT $ runStateT t j)
+  let warning = P.text "Proof State" <+> P.parens (P.text lbl) $+$ P.nest 4 (P.vcat (fmap pGoal $ zip [1..] (reverse sg)))
+  lift $ lift $ reportWarning $ render warning
+  return e
+  where
+    collectSubgoals :: ((), TacticState) -> Client ((), TacticState) Exp (StateT [Judgement] (ExceptT TacticError Q)) Exp
+    collectSubgoals (_, s) = do
+      modify (goal s:)
+      request ((), s)
 
--- | Creates a new subgoal.
-subgoal :: Judgement -> TacticM ()
-subgoal j = TacticM $ modify (\s -> s { subgoals = j:subgoals s })
+    pGoal :: (Int, Judgement) -> Doc
+    pGoal (i, j) = P.text "#" P.<> P.int i $+$ P.nest 2 (ppr j $+$ P.text "")
 
--- | Defines a new hypothesis variable with a given name.
-fresh :: String -> TacticM Name
-fresh "" = tacticError $ InvalidHypothesisName "\"\""
-fresh nm = TacticM $ gets (isDefined nm . hypothesisVars) >>= \case
-  True -> tacticError $ DuplicateHypothesis nm
-  False -> addVar nm
+runTactic :: Tactic () -> Judgement -> Q (Exp, [Judgement])
+runTactic (Tactic t) j = do
+  r <- runExceptT $ flip runStateT [] $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t $ TacticState j Set.empty)
+  case r of
+    Left err -> hoistError err
+    Right (e, st) -> return $ (e, reverse $ fmap goal st)
+  where
+    server :: jdg -> Server jdg Exp (StateT [jdg] (ExceptT TacticError Q)) Exp
+    server j = do
+      modify (j:)
+      hole <- lift $ lift $ lift $ newName "_"
+      respond (UnboundVarE hole) >>= server
+
+liftQ :: Q a -> Tac a
+liftQ = lift . lift . lift
+
+bindVar :: String -> Tac Name
+bindVar nm = do
+  modify (\s -> s { boundVars = Set.insert nm $ boundVars s })
+  liftQ $ newName nm
+
+fresh :: String -> Tac Name
+fresh "" = throwError $ InvalidHypothesisName "\"\""
+fresh nm = gets (isDefined nm . boundVars) >>= \case
+  True -> throwError $ DuplicateHypothesis nm
+  False -> bindVar nm
   where
     isDefined :: String -> Set String -> Bool
     isDefined nm s = (head nm == '_') || (Set.member nm s)
 
--- | Defines a wildcard hypothesis variable.
-wildcard :: TacticM Name
-wildcard = TacticM $ do
+wildcard :: Tac Name
+wildcard = do
   -- The way this works is pretty hacky...
-  c <- gets (Set.size . Set.filter ((== '_') . head ) . hypothesisVars)
-  addVar ("_" ++ show c)
+  c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
+  bindVar ("_" ++ show c)
+
+-- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
+mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
+mkTactic f = Tactic $ do
+  j <- gets (goal)
+  StateT $ \s -> ProofStateT $ do
+     (e, s') <- (\s -> request ((), s)) >\\ runStateT (f (goal s)) s
+     return e
+
 
 {- Error Handling -}
-render :: Doc -> String
-render = P.render . P.to_HPJ_Doc
-
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
   | GoalMismatch { tacName :: String, appliedGoal :: Type }
   | UndefinedHypothesis String
   | DuplicateHypothesis String
   | InvalidHypothesisName String
-  | UnsolvedGoals (ProofState Judgement)
+  | UnsolvedGoals [Judgement]
   | NotImplemented String
 
--- | Throws a tactic error.
-tacticError :: (MonadFail m) => TacticError -> m a
-tacticError e =
+render :: Doc -> String
+render = P.render . P.to_HPJ_Doc
+
+hoistError :: (MonadFail m) => TacticError -> m a
+hoistError e =
   let errText = case e of
         TypeMismatch{ expectedType, expr, exprType } ->
           P.text "Expected Type" <+> ppr expectedType <+> P.text "but" <+> ppr expr <+> P.text "has type" <+> ppr exprType $+$
@@ -180,21 +172,19 @@ tacticError e =
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 
-tacticPrint :: String -> TacticM ()
-tacticPrint = liftT . T . reportWarning
+warning :: Doc -> Tac ()
+warning d = liftQ $ reportWarning $ render d
 
--- | Prints out the proof state after the provided tactic was executed.
-(?) :: Tactic Judgement () -> String -> Tactic Judgement ()
-t ? lbl = Tactic $ \j -> do
-  ps <- runTactic t j
-  T $ reportWarning $ render $ P.text "Proof State" <+> P.parens (P.text lbl) $+$ ppr (fmap snd ps)
-  return ps
+subgoal :: Judgement -> Tac Exp
+subgoal j = do
+  s <- get
+  lift $ request (s { goal = j })
 
--- | Runs a tactic script against a goal, and generates a @'Dec'@.
-tactic :: String -> Q Type -> Tactic Judgement () -> Q [Dec]
-tactic nm ty tac = do
-  fnm <- newName nm
-  p@(ProofState subgoals ext) <- runT $ fmap snd <$> (runTactic tac =<< (J.empty <$> T ty))
+tactic :: String -> Q Type -> Tactic () -> Q [Dec]
+tactic nm qty tac = do
+  decName <- newName nm
+  ty <- qty
+  (ext, subgoals) <- runTactic tac $ J.empty ty
   case subgoals of
-    [] -> return [ValD (VarP fnm) (NormalB $ ext []) []]
-    _ -> tacticError $ UnsolvedGoals p
+    [] -> return [ValD (VarP decName) (NormalB $ ext) []]
+    _ -> hoistError $ UnsolvedGoals subgoals
