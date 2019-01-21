@@ -16,6 +16,7 @@ module Language.Haskell.Tactic.Internal.Tactic
   , TacticError(..)
   , Alt(..)
   , (<@>)
+  , (?)
   , try
   , mkTactic
   , fresh
@@ -40,7 +41,7 @@ import Pipes.Lift
 import qualified Text.PrettyPrint as P (render)
 import Language.Haskell.TH
 import Language.Haskell.TH.Ppr hiding (split)
-import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
+import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$), ($$))
 import qualified Language.Haskell.TH.PprLib as P
 
 
@@ -68,13 +69,29 @@ try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
 
 (<@>) :: Tactic () -> [Tactic ()] -> Tactic ()
-(Tactic t) <@> ts = Tactic $ StateT $ \j -> ProofStateT $ flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t j)
+(Tactic t) <@> ts = Tactic $ StateT $ \s -> ProofStateT $
+  flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t s)
   where
     applyTac :: ((), TacticState) -> Client ((), TacticState) Exp (StateT [Tactic ()] (ExceptT TacticError Q)) Exp
-    applyTac (_, j) = do
+    applyTac (_, s) = do
       t <- gets (unTactic . head)
       modify tail
-      hoist lift $ unProofStateT $ runStateT t j
+      hoist lift $ unProofStateT $ runStateT t s
+
+(?) :: Tactic () -> String -> Tactic ()
+(Tactic t) ? lbl = Tactic $ StateT $ \j -> ProofStateT $ do
+  (e, sg) <- flip runStateT [] $ distribute $ collectSubgoals >\\ (hoist lift $ unProofStateT $ runStateT t j)
+  let warning = P.text "Proof State" <+> P.parens (P.text lbl) $+$ P.nest 4 (P.vcat (fmap pGoal $ zip [1..] (reverse sg)))
+  lift $ lift $ reportWarning $ render warning
+  return e
+  where
+    collectSubgoals :: ((), TacticState) -> Client ((), TacticState) Exp (StateT [Judgement] (ExceptT TacticError Q)) Exp
+    collectSubgoals (_, s) = do
+      modify (goal s:)
+      request ((), s)
+
+    pGoal :: (Int, Judgement) -> Doc
+    pGoal (i, j) = P.text "#" P.<> P.int i $+$ P.nest 2 (ppr j $+$ P.text "")
 
 runTactic :: Tactic () -> Judgement -> Q (Exp, [Judgement])
 runTactic (Tactic t) j = do

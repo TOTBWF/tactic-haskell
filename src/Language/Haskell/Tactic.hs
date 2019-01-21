@@ -12,6 +12,7 @@
 module Language.Haskell.Tactic
   ( Tactic
   , (<@>)
+  , (?)
   , try
   , exact
   , assumption
@@ -31,7 +32,10 @@ import Control.Monad.Except
 import Data.Foldable
 import Data.Traversable
 
-import Language.Haskell.TH.Syntax hiding (lift)
+import Language.Haskell.TH
+import Language.Haskell.TH.Ppr hiding (split)
+import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
+import qualified Language.Haskell.TH.PprLib as P
 
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 import Language.Haskell.Tactic.Internal.Telescope (Telescope(..), (@>))
