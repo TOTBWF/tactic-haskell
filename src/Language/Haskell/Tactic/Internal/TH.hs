@@ -22,6 +22,7 @@ import Data.Bifunctor
 
 import Language.Haskell.TH
 
+-- | Pattern for a single function arrow
 pattern Arrow t1 t2 = AppT (AppT ArrowT t1) t2
 
 function :: Type -> Maybe ([Type], Type)
@@ -34,6 +35,7 @@ function (Arrow t1 t2) =
     go t = [t]
 function _ = Nothing
 
+-- | Pattern for a function of any given arity
 pattern Function args ret <- (function -> Just (args, ret))
 
 tuple :: Type -> Maybe [Type]
@@ -46,6 +48,7 @@ tuple = go []
     go ts (AppT t1 t2) = go (t2:ts) t1
     go _ _ = Nothing
 
+-- | Pattern for a tuple of any given arity
 pattern Tuple ts <- (tuple -> Just ts)
 
 constructor :: Type -> Maybe (Name, [Type])
@@ -56,6 +59,8 @@ constructor = go []
     go ts (AppT t1 t2) = go (t2:ts) t1
     go _ _ = Nothing
 
+-- | Pattern for a constructor application
 pattern Constructor n ts  <- (constructor -> Just (n, ts))
 
+-- | Pattern for the list type
 pattern List t = AppT ListT t

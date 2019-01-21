@@ -11,6 +11,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Language.Haskell.Tactic
   ( Tactic
+  -- * Tactics
   , (<@>)
   , (?)
   , try
@@ -24,7 +25,10 @@ module Language.Haskell.Tactic
   , split
   , apply
   , auto
+  -- * Running Tactics
   , tactic
+  -- * Re-Exports
+  , Alt(..)
   ) where
 
 import Control.Monad.Except
@@ -70,7 +74,7 @@ forall = mkTactic $ \(Judgement hy g) ->
     t -> throwError $ GoalMismatch "intro" t
 
 -- | Applies to goals of the form @a -> b@.
--- Brings @a@ in as a hypothesis, and generates
+-- Brings @a@ in as a hypothesis, using the provided name, and generates
 -- a subgoal of type @t@.
 intro :: String -> Tactic ()
 intro n = mkTactic $ \(Judgement hy g) ->
@@ -81,6 +85,9 @@ intro n = mkTactic $ \(Judgement hy g) ->
       -- return $ \[body] -> LamE [VarP x] body
     t -> throwError $ GoalMismatch "intro" t
 
+-- | Applies to goals of the form @a -> b@.
+-- Brings @a@ in as a hypothesis, and generates
+-- a subgoal of type @t@.
 intro_ :: Tactic  ()
 intro_ = mkTactic $ \(Judgement hy g) ->
   case g of

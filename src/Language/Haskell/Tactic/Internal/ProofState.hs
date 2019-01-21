@@ -20,10 +20,6 @@ module Language.Haskell.Tactic.Internal.ProofState
   , axiom
   ) where
 
--- import Language.Haskell.TH.Ppr
--- import Language.Haskell.TH.PprLib hiding (empty, (<>))
--- import qualified Language.Haskell.TH.PprLib as P
-
 import Data.Functor.Alt
 import Control.Monad
 import Control.Monad.Except
@@ -35,6 +31,10 @@ import Pipes.Core
 
 import Language.Haskell.TH
 
+-- | @ProofStateT m jdg@ is "morally" equivalent to @m ([jdg], [Exp] -> Exp)@.
+-- However, to preserve associativity when presented with non-commutative base Monads,
+-- we need to use a streaming style, similar to @'ListT'@. However, due to the
+-- required transformation from judgements to extracts, we build upon @'Client'@.
 newtype ProofStateT m jdg = ProofStateT { unProofStateT :: Client jdg Exp m Exp }
 
 instance (Monad m) => Functor (ProofStateT m) where
@@ -64,14 +64,7 @@ instance (MonadError err m) => MonadError err (ProofStateT m) where
   throwError err = ProofStateT $ throwError err
   catchError (ProofStateT m) handler = ProofStateT $ catchError m (unProofStateT . handler)
 
--- Create a @'ProofState'@ with no subgoals.
+-- | Create a @'ProofState'@ with no subgoals.
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
 
--- liftClient :: ()
--- foo :: (Monad m) => jdg -> ProofStateT m Exp
--- foo jdg = fmap _h $ ProofStateT $ request jdg
--- subgoal :: (Monad m) => jdg -> ProofStateT m Exp
--- subgoal j = ProofStateT $ do
---   e <- request j
---   _h $ e

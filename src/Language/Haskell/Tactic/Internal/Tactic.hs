@@ -12,18 +12,23 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Language.Haskell.Tactic.Internal.Tactic
-  ( Tactic(..)
+  ( Tactic
   , TacticError(..)
-  , Alt(..)
+  -- * Built-ins
   , (<@>)
   , (?)
   , try
+  -- * Tactic Construction
+  , Tac
   , mkTactic
+  , subgoal
+  -- ** Name Management
   , fresh
   , wildcard
-  , warning
-  , subgoal
+  -- * Running Tactics
   , tactic
+  -- * Re-Exports
+  , Alt(..)
   ) where
 
 import Data.Functor.Alt
@@ -56,7 +61,6 @@ import Language.Haskell.Tactic.Internal.ProofState
 newtype Tactic a = Tactic { unTactic :: StateT TacticState (ProofStateT (ExceptT TacticError Q)) a  }
   deriving (Functor, Applicative, Monad, MonadFail, MonadIO, MonadError TacticError)
 
-type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)) a
 
 data TacticState = TacticState
   { goal :: Judgement
@@ -65,9 +69,12 @@ data TacticState = TacticState
 
 instance Alt (Tactic) where (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
 
+-- | Tries to apply a tactic, and backtracks if the tactic fails.
 try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
 
+-- | @t \<\@> ts@ Applies the tactic @t@, then applies each of the tactics in the list to one of the resulting subgoals.
+-- If @ts@ is shorter than the list of resulting subgoals, the identity tactic will be applied to the remainder.
 (<@>) :: Tactic () -> [Tactic ()] -> Tactic ()
 (Tactic t) <@> ts = Tactic $ StateT $ \s -> ProofStateT $
   flip evalStateT (ts ++ repeat (pure ())) $ distribute $ applyTac >\\ (hoist lift $ unProofStateT $ runStateT t s)
@@ -78,6 +85,7 @@ try t = t <!> (pure ())
       modify tail
       hoist lift $ unProofStateT $ runStateT t s
 
+-- | @t ? lbl@ traces out the proof state after applying @t@, annotated with the label @lbl@.
 (?) :: Tactic () -> String -> Tactic ()
 (Tactic t) ? lbl = Tactic $ StateT $ \j -> ProofStateT $ do
   (e, sg) <- flip runStateT [] $ distribute $ collectSubgoals >\\ (hoist lift $ unProofStateT $ runStateT t j)
@@ -106,6 +114,23 @@ runTactic (Tactic t) j = do
       hole <- lift $ lift $ lift $ newName "_"
       respond (UnboundVarE hole) >>= server
 
+type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)) a
+
+
+-- | Creates a @'Tactic'@. See @'subgoal'@ for the rest of the API.
+mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
+mkTactic f = Tactic $ do
+  j <- gets (goal)
+  StateT $ \s -> ProofStateT $ do
+     (e, s') <- (\s -> request ((), s)) >\\ runStateT (f (goal s)) s
+     return e
+
+-- | Creates a subgoal, and returns the extract.
+subgoal :: Judgement -> Tac Exp
+subgoal j = do
+  s <- get
+  lift $ request (s { goal = j })
+
 liftQ :: Q a -> Tac a
 liftQ = lift . lift . lift
 
@@ -114,6 +139,8 @@ bindVar nm = do
   modify (\s -> s { boundVars = Set.insert nm $ boundVars s })
   liftQ $ newName nm
 
+-- | Tries to create a name, and fails with @'DuplicateHypothesis'@ if the name is already taken.
+-- Furthermore, names that begin with '_' are reserved for wildcard names.
 fresh :: String -> Tac Name
 fresh "" = throwError $ InvalidHypothesisName "\"\""
 fresh nm = gets (isDefined nm . boundVars) >>= \case
@@ -123,22 +150,15 @@ fresh nm = gets (isDefined nm . boundVars) >>= \case
     isDefined :: String -> Set String -> Bool
     isDefined nm s = (head nm == '_') || (Set.member nm s)
 
+
+-- | Creates a fresh wildcard name.
 wildcard :: Tac Name
 wildcard = do
   -- The way this works is pretty hacky...
   c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
   bindVar ("_" ++ show c)
 
--- | Creates a @'Tactic'@. See @'subgoal'@ and @'define'@ for the rest of the tactic creation API.
-mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
-mkTactic f = Tactic $ do
-  j <- gets (goal)
-  StateT $ \s -> ProofStateT $ do
-     (e, s') <- (\s -> request ((), s)) >\\ runStateT (f (goal s)) s
-     return e
 
-
-{- Error Handling -}
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
   | GoalMismatch { tacName :: String, appliedGoal :: Type }
@@ -172,14 +192,8 @@ hoistError e =
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 
-warning :: Doc -> Tac ()
-warning d = liftQ $ reportWarning $ render d
-
-subgoal :: Judgement -> Tac Exp
-subgoal j = do
-  s <- get
-  lift $ request (s { goal = j })
-
+-- | @'tactic' nm [t| ty |] tac@ creates a declaration with the name @nm@ of type @ty@
+-- by applying the tactic @tac@
 tactic :: String -> Q Type -> Tactic () -> Q [Dec]
 tactic nm qty tac = do
   decName <- newName nm
