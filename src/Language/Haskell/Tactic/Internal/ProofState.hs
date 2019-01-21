@@ -51,7 +51,7 @@ instance (Monad m) => Monad (ProofStateT m) where
   return = pure
   (ProofStateT p) >>= k = ProofStateT $ (unProofStateT . k) >\\ p
 
-instance MonadTrans (ProofStateT ) where
+instance MonadTrans (ProofStateT) where
   lift m = ProofStateT $ request =<< (lift m)
 
 instance (MonadFail m) => MonadFail (ProofStateT m) where
@@ -68,6 +68,9 @@ instance (MonadError err m) => MonadError err (ProofStateT m) where
 axiom :: (Monad m) => Exp -> ProofStateT m jdg
 axiom e = ProofStateT $ return e
 
+-- liftClient :: ()
+-- foo :: (Monad m) => jdg -> ProofStateT m Exp
+-- foo jdg = fmap _h $ ProofStateT $ request jdg
 -- subgoal :: (Monad m) => jdg -> ProofStateT m Exp
 -- subgoal j = ProofStateT $ do
 --   e <- request j

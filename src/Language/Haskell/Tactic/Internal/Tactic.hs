@@ -55,7 +55,7 @@ import Language.Haskell.Tactic.Internal.ProofState
 newtype Tactic a = Tactic { unTactic :: StateT TacticState (ProofStateT (ExceptT TacticError Q)) a  }
   deriving (Functor, Applicative, Monad, MonadFail, MonadIO, MonadError TacticError)
 
-type Tac = StateT TacticState (ProofStateT (ExceptT TacticError Q))
+type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)) a
 
 data TacticState = TacticState
   { goal :: Judgement
@@ -116,8 +116,9 @@ wildcard = do
 mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
 mkTactic f = Tactic $ do
   j <- gets (goal)
-  e <- f j
-  lift $ axiom e
+  StateT $ \s -> ProofStateT $ do
+     (e, s') <- (\s -> request ((), s)) >\\ runStateT (f (goal s)) s
+     return e
 
 
 {- Error Handling -}
@@ -158,7 +159,9 @@ warning :: Doc -> Tac ()
 warning d = liftQ $ reportWarning $ render d
 
 subgoal :: Judgement -> Tac Exp
-subgoal j = StateT $ \s -> ProofStateT $ request (error "subgoal is broken...", s { goal = j})
+subgoal j = do
+  s <- get
+  lift $ request (s { goal = j })
 
 tactic :: String -> Q Type -> Tactic () -> Q [Dec]
 tactic nm qty tac = do
