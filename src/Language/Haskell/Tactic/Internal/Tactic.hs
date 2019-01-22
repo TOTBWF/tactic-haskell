@@ -190,7 +190,7 @@ lookupVarType :: Name -> Tac (Exp, Type)
 lookupVarType n = (liftQ $ reify n) >>= \case
   VarI _ t _ -> return (VarE n, t)
   DataConI _ t _ -> return (ConE n, t)
-  i -> throwError $ NotImplemented $ "lookupVarType: Not a VarI " ++ show i
+  i -> throwError $ NotImplemented $ "lookupVarType: Variable Type " ++ show i
 
 -- | Check to see if a type implements a typeclass
 implements :: Type -> Name -> Tac Bool
