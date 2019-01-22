@@ -26,6 +26,20 @@ tactic "foo" [t| forall a b c. a -> (a -> b) -> (b -> c) -> (a,c)|] $ do
   auto 5
 ```
 
+```haskell
+data Nat = Z | S Nat
+  deriving (Show)
+
+tactic "plus" [t| Nat -> Nat -> Nat |] $ do
+  intros ["n", "m"]
+  induction "n" <@>
+    [ exact "m"
+    , do
+       apply 'S
+       exact "ind"
+    ]
+```
+
 
 For more examples, see the `samples/` directory.
 
