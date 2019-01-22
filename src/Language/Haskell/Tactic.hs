@@ -64,10 +64,10 @@ instance Exact String where
 
 instance Exact Name where
   exact n = mkTactic $ \(Judgement hy g) -> do
-    t <- lookupVarType n
+    (e, t) <- lookupVarType n
     case (t == g) of
-      True -> return (VarE n)
-      False -> throwError $ TypeMismatch g (VarE n) t
+      True -> return e
+      False -> throwError $ TypeMismatch g e t
 
 instance Exact Integer where
   exact i = mkTactic $ \(Judgement hy g) -> implements g ''Num >>= \case
