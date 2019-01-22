@@ -161,13 +161,9 @@ induction n = mkTactic $ \j@(Judgement hy goal) ->
   case (J.lookup n j) of
     Just (x, Constructor indn tvars) -> do
       ctrs <- lookupConstructors indn
-      -- We need to check that any instances of recursion are
-      -- replaced by the goal type...
-      -- Furthermore, every time we use one of those "variables",
-      -- we need to replace the usage with a recursive call?
-      -- This means that we need to generate something like "fix"
-      -- let genSubgoal = d
-      (ffix, ffixn) <- fresh "f"
+      -- Because this can be used inside of something like an apply,
+      -- we need to use "fix"
+      (ffix, ffixn) <- fresh "ffix"
       (xfix, xfixn) <- fresh "x"
       matches <- for ctrs $ \(DCon cn tys) -> do
         -- Generate names for each of the parameters of the constructor
@@ -182,13 +178,10 @@ induction n = mkTactic $ \j@(Judgement hy goal) ->
         body <- subgoal (J.extends (Tl.fromList newHyps) $ J.remove n j)
         return $ Match (ConP cn pats) (NormalB body) []
 
-      -- In order to get the recursive calls just right, we can use `fix`.
       return $ fixExp (LamE [VarP ffixn, VarP xfixn] (CaseE (VarE xfixn) matches)) x
     Just (_, t) -> throwError $ GoalMismatch "induction" t
     Nothing -> throwError $ UndefinedHypothesis n
   where
-
-
     fixExp :: Exp -> Exp -> Exp
     fixExp f a = AppE (AppE (VarE 'fix) f) a
 

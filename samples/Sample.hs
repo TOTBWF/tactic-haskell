@@ -7,7 +7,6 @@ import Control.Applicative
 
 import Language.Haskell.TH
 import Language.Haskell.Tactic
-import Data.Function
 
 data Nat = Z | S Nat
   deriving (Show)
