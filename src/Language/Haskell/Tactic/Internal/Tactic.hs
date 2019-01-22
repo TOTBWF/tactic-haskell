@@ -29,6 +29,7 @@ module Language.Haskell.Tactic.Internal.Tactic
   -- ** Reify Wrappers
   , lookupConstructors
   , lookupVarType
+  , implements
   -- * Running Tactics
   , tactic
   -- * Re-Exports
@@ -160,6 +161,7 @@ fresh n = gets (Map.lookup n . boundVars) >>= \case
   Just i -> do
     modify (\s -> s { boundVars = Map.adjust (+ 1) n $ boundVars s })
     let n' = n ++ show i
+    -- TODO: What happens if someone freshens something that ends
     (n', ) <$> (liftQ $ newName n')
   Nothing -> do
     modify (\s -> s { boundVars = Map.insert n 1 $ boundVars s })
@@ -179,6 +181,10 @@ lookupVarType n = (liftQ $ reify n) >>= \case
   VarI _ t _ -> return t
   DataConI _ t _ -> return t
   i -> throwError $ NotImplemented $ "lookupVarType: Not a VarI " ++ show i
+
+-- | Check to see if a type implements a typeclass
+implements :: Type -> Name -> Tac Bool
+implements ty n = liftQ $ isInstance n [ty]
 
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }

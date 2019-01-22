@@ -15,13 +15,14 @@ module Language.Haskell.Tactic
   , (<@>)
   , (?)
   , try
-  , Evidence(..)
+  , Exact(..)
   , assumption
   , forall
   , intro
   , intro_
   , intros
   , intros_
+  , Apply(..)
   , apply_
   , split
   , induction
@@ -50,40 +51,28 @@ import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import Language.Haskell.Tactic.Internal.TH
 import Language.Haskell.Tactic.Internal.Tactic
 
-class Evidence e where
+class Exact e where
   -- | When the hypothesis variable passed in matches the goal type,
   -- discharge the goal and create no new subgoals.
   exact :: e -> Tactic ()
 
-  -- | When the hypothesis variable passed in refers to a function whose return type matches the goal,
-  -- this tactic generates subgoals for all of the argument types.
-  apply :: e -> Tactic ()
-
-instance Evidence String where
+instance Exact String where
   exact n = mkTactic $ \j@(Judgement hy g) ->
     case J.lookup n j of
       Just (e, t) -> if (t == g) then return e else throwError $ TypeMismatch g e t
       Nothing -> throwError $ UndefinedHypothesis n
 
-  apply f = mkTactic $ \j@(Judgement hy g) ->
-    case (J.lookup f j) of
-      Just (e, (Function args ret)) | ret == g -> do
-        foldl AppE e <$> traverse (subgoal . Judgement hy) args
-      Just (_, t) -> throwError $ GoalMismatch "apply" t
-      Nothing -> throwError $ UndefinedHypothesis f
-
-instance Evidence Name where
-  exact n = mkTactic $ \j@(Judgement hy g) -> do
+instance Exact Name where
+  exact n = mkTactic $ \(Judgement hy g) -> do
     t <- lookupVarType n
     case (t == g) of
       True -> return (VarE n)
       False -> throwError $ TypeMismatch g (VarE n) t
 
-  apply n = mkTactic $ \j@(Judgement hy g) ->
-    lookupVarType n >>= \case
-      (Function args ret) | ret == g -> do
-        foldl AppE (ConE n) <$> traverse (subgoal . Judgement hy) args
-      t -> throwError $ GoalMismatch "apply" t
+instance Exact Integer where
+  exact i = mkTactic $ \(Judgement hy g) -> implements g ''Num >>= \case
+    True -> return $ AppE (VarE 'fromInteger) (LitE $ IntegerL i)
+    False -> throwError $ GoalMismatch "exact" g
 
 -- | Searches the hypotheses, looking for one that matches the goal type.
 assumption :: Tactic ()
@@ -146,6 +135,25 @@ split = mkTactic $ \(Judgement hy g) ->
       TupE <$> traverse (subgoal . Judgement hy) ts
     t -> throwError $ GoalMismatch "tuple" t
 
+class Apply e where
+  -- | When the hypothesis variable passed in refers to a function whose return type matches the goal,
+  -- this tactic generates subgoals for all of the argument types.
+  apply :: e -> Tactic ()
+
+instance Apply String where
+  apply f = mkTactic $ \j@(Judgement hy g) ->
+    case (J.lookup f j) of
+      Just (e, (Function args ret)) | ret == g -> do
+        foldl AppE e <$> traverse (subgoal . Judgement hy) args
+      Just (_, t) -> throwError $ GoalMismatch "apply" t
+      Nothing -> throwError $ UndefinedHypothesis f
+
+instance Apply Name where
+  apply n = mkTactic $ \j@(Judgement hy g) ->
+    lookupVarType n >>= \case
+      (Function args ret) | ret == g -> do
+        foldl AppE (ConE n) <$> traverse (subgoal . Judgement hy) args
+      t -> throwError $ GoalMismatch "apply" t
 
 -- | Looks through the context, trying to find a function that could potentially be applied.
 apply_ :: Tactic ()
