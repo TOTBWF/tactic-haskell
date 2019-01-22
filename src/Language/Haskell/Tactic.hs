@@ -24,6 +24,7 @@ module Language.Haskell.Tactic
   , intros_
   , split
   , apply
+  , induction
   , auto
   -- * Running Tactics
   , tactic
@@ -134,6 +135,21 @@ apply_ = mkTactic $ \j@(Judgement hy g) ->
     Just (n, (Function args ret)) -> do
       foldl AppE (VarE n) <$> traverse (subgoal . Judgement hy) args
     Nothing -> throwError $ GoalMismatch "apply_" g
+
+induction :: String -> Tactic ()
+induction n = mkTactic $ \j@(Judgement hy g) ->
+  case (J.lookup n j) of
+    Just (n, ConT tyn) -> do
+      ctrs <- lookupConstructors tyn
+      -- TODO: Check to see if there are any instances of recursion
+      matches <- for ctrs $ \(DCon cn tys) -> do
+        ns <- traverse (const wildcard) tys
+        body <- subgoal (J.extends (Tl.fromList $ zip ns tys) j)
+        return $ Match (ConP cn (fmap VarP ns)) (NormalB body) []
+
+      return $ CaseE (VarE n) matches
+    Just (_, t) -> throwError $ GoalMismatch "induction" t
+    Nothing -> throwError $ UndefinedHypothesis n
 
 -- | Tries to automatically solve a given goal.
 auto :: Int -> Tactic ()

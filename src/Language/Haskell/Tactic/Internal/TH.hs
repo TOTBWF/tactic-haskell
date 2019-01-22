@@ -16,6 +16,7 @@ module Language.Haskell.Tactic.Internal.TH
   , pattern Tuple
   , pattern Constructor
   , pattern List
+  , DCon(..)
   ) where
 
 import Data.Bifunctor
@@ -64,3 +65,6 @@ pattern Constructor n ts  <- (constructor -> Just (n, ts))
 
 -- | Pattern for the list type
 pattern List t = AppT ListT t
+
+-- | Simple Data Constructor Type
+data DCon = DCon Name [Type]

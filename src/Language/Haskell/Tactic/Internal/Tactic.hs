@@ -25,6 +25,8 @@ module Language.Haskell.Tactic.Internal.Tactic
   -- ** Name Management
   , fresh
   , wildcard
+  -- ** Reify Wrappers
+  , lookupConstructors
   -- * Running Tactics
   , tactic
   -- * Re-Exports
@@ -37,6 +39,8 @@ import Control.Monad.State.Strict
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.Morph
 
+import Data.Foldable
+import Data.Traversable
 import Data.Bifunctor
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -49,12 +53,12 @@ import Language.Haskell.TH.Ppr hiding (split)
 import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$), ($$))
 import qualified Language.Haskell.TH.PprLib as P
 
-
 import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import qualified Language.Haskell.Tactic.Internal.Judgement as J
 import Language.Haskell.Tactic.Internal.Telescope (Telescope, (@>))
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 import Language.Haskell.Tactic.Internal.ProofState
+import Language.Haskell.Tactic.Internal.TH
 
 -- | A @'Tactic'@ is simply a function from a 'Judgement' to a @'ProofState'@.
 -- However, we add an extra parameter 'a' so that @'Tactic'@ can become a @'Monad'@.
@@ -116,7 +120,6 @@ runTactic (Tactic t) j = do
 
 type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)) a
 
-
 -- | Creates a @'Tactic'@. See @'subgoal'@ for the rest of the API.
 mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
 mkTactic f = Tactic $ do
@@ -150,13 +153,20 @@ fresh nm = gets (isDefined nm . boundVars) >>= \case
     isDefined :: String -> Set String -> Bool
     isDefined nm s = (head nm == '_') || (Set.member nm s)
 
-
 -- | Creates a fresh wildcard name.
 wildcard :: Tac Name
 wildcard = do
   -- The way this works is pretty hacky...
   c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
   bindVar ("_" ++ show c)
+
+-- | Looks up a type's constructors.
+lookupConstructors :: Name -> Tac ([DCon])
+lookupConstructors n = (liftQ $ reify n) >>= \case
+  TyConI (DataD _ _ _ _ cs _) -> for cs $ \case
+    NormalC cn ts -> return $ DCon cn (fmap snd ts)
+    c -> throwError $ NotImplemented $ "lookupType: Constructors of form" ++ show c
+  i -> throwError $ NotImplemented $ "lookupType: Declarations of form" ++ show i
 
 
 data TacticError

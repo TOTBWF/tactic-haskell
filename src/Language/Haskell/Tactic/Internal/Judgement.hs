@@ -3,6 +3,7 @@ module Language.Haskell.Tactic.Internal.Judgement
   ( Judgement(..)
   , empty
   , extend
+  , extends
   , lookup
   ) where
 
@@ -12,7 +13,7 @@ import Data.Bifunctor
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Ppr
-import Language.Haskell.TH.PprLib hiding (empty)
+import Language.Haskell.TH.PprLib hiding (empty, (<>))
 
 import Language.Haskell.Tactic.Internal.Telescope (Telescope(..), (@>))
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
@@ -35,6 +36,10 @@ empty t = Judgement (mempty) t
 -- | Extend a @'Judgement'@ with a hypothesis.
 extend :: Name -> Type -> Judgement -> Judgement
 extend x t (Judgement hyps goal) = Judgement (hyps @> (x,t)) goal
+
+-- | Extend a @'Judgement'@ with a telescope.
+extends :: Telescope Name Type -> Judgement -> Judgement
+extends tl (Judgement hyps goal) = Judgement (hyps <> tl) goal
 
 -- | Look up a hypothesis variable in a @'Judgement'@. Note that this uses @'nameBase'@ for comparison.
 lookup :: String -> Judgement -> Maybe (Name, Type)
