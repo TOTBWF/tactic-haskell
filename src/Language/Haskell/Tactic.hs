@@ -15,15 +15,15 @@ module Language.Haskell.Tactic
   , (<@>)
   , (?)
   , try
-  , exact
+  , Evidence(..)
   , assumption
   , forall
   , intro
   , intro_
   , intros
   , intros_
+  , apply_
   , split
-  , apply
   , induction
   , auto
   -- * Running Tactics
@@ -36,6 +36,7 @@ import Control.Monad.Except
 
 import Data.Foldable
 import Data.Traversable
+import Data.Function
 
 import Language.Haskell.TH
 import Language.Haskell.TH.Ppr hiding (split)
@@ -49,19 +50,46 @@ import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import Language.Haskell.Tactic.Internal.TH
 import Language.Haskell.Tactic.Internal.Tactic
 
--- | When the hypothesis variable passed in matches the goal type,
--- discharge the goal and create no new subgoals.
-exact :: String -> Tactic ()
-exact n = mkTactic $ \j@(Judgement hy g) ->
-  case J.lookup n j of
-    Just (x, t) -> if (t == g) then return (VarE x) else throwError $ TypeMismatch g (VarE x) t
-    Nothing -> throwError $ UndefinedHypothesis n
+class Evidence e where
+  -- | When the hypothesis variable passed in matches the goal type,
+  -- discharge the goal and create no new subgoals.
+  exact :: e -> Tactic ()
+
+  -- | When the hypothesis variable passed in refers to a function whose return type matches the goal,
+  -- this tactic generates subgoals for all of the argument types.
+  apply :: e -> Tactic ()
+
+instance Evidence String where
+  exact n = mkTactic $ \j@(Judgement hy g) ->
+    case J.lookup n j of
+      Just (e, t) -> if (t == g) then return e else throwError $ TypeMismatch g e t
+      Nothing -> throwError $ UndefinedHypothesis n
+
+  apply f = mkTactic $ \j@(Judgement hy g) ->
+    case (J.lookup f j) of
+      Just (e, (Function args ret)) | ret == g -> do
+        foldl AppE e <$> traverse (subgoal . Judgement hy) args
+      Just (_, t) -> throwError $ GoalMismatch "apply" t
+      Nothing -> throwError $ UndefinedHypothesis f
+
+instance Evidence Name where
+  exact n = mkTactic $ \j@(Judgement hy g) -> do
+    t <- lookupVarType n
+    case (t == g) of
+      True -> return (VarE n)
+      False -> throwError $ TypeMismatch g (VarE n) t
+
+  apply n = mkTactic $ \j@(Judgement hy g) ->
+    lookupVarType n >>= \case
+      (Function args ret) | ret == g -> do
+        foldl AppE (ConE n) <$> traverse (subgoal . Judgement hy) args
+      t -> throwError $ GoalMismatch "apply" t
 
 -- | Searches the hypotheses, looking for one that matches the goal type.
 assumption :: Tactic ()
 assumption = mkTactic $ \j@(Judgement hy g) ->
-  case Tl.find (== g) hy of
-    Just (x,_) -> return $ VarE x
+  case Tl.find ((== g) . snd) hy of
+    Just (_,(e, _)) -> return e
     Nothing -> throwError $ GoalMismatch "assumption" g
 
 -- | Used to discharge any @forall@ statements at the begining
@@ -72,7 +100,7 @@ forall = mkTactic $ \(Judgement hy g) ->
   case g of
     (ForallT _ _ t) -> do
       subgoal $ Judgement hy t
-    t -> throwError $ GoalMismatch "intro" t
+    t -> throwError $ GoalMismatch "forall" t
 
 -- | Applies to goals of the form @a -> b@.
 -- Brings @a@ in as a hypothesis, using the provided name, and generates
@@ -81,8 +109,8 @@ intro :: String -> Tactic ()
 intro n = mkTactic $ \(Judgement hy g) ->
   case g of
     (Arrow a b) -> do
-      x <- fresh n
-      LamE [VarP x] <$> subgoal (Judgement (hy @> (x,a)) b)
+      x <- unique n
+      LamE [VarP x] <$> subgoal (Judgement (hy @> (n,(VarE x, a))) b)
       -- return $ \[body] -> LamE [VarP x] body
     t -> throwError $ GoalMismatch "intro" t
 
@@ -93,9 +121,9 @@ intro_ :: Tactic  ()
 intro_ = mkTactic $ \(Judgement hy g) ->
   case g of
     (Arrow a b) -> do
-      x <- wildcard
-      LamE [VarP x] <$> subgoal (Judgement (hy @> (x,a)) b)
-    t -> throwError $ GoalMismatch "intro" t
+      (n, x) <- fresh "x"
+      LamE [VarP x] <$> subgoal (Judgement (hy @> (n, (VarE x, a))) b)
+    t -> throwError $ GoalMismatch "intro_" t
 
 -- | Applies to goals of the form @a -> b -> c -> ...@
 -- Brings each of the variables in as a hypothesis,
@@ -118,38 +146,51 @@ split = mkTactic $ \(Judgement hy g) ->
       TupE <$> traverse (subgoal . Judgement hy) ts
     t -> throwError $ GoalMismatch "tuple" t
 
--- | When the hypothesis variable passed in refers to a function whose return type matches the goal,
--- this tactic generates subgoals for all of the argument types.
-apply :: String -> Tactic ()
-apply f = mkTactic $ \j@(Judgement hy g) ->
-  case (J.lookup f j) of
-    Just (n, (Function args ret)) | ret == g -> do
-      foldl AppE (VarE n) <$> traverse (subgoal . Judgement hy) args
-    Just (_, t) -> throwError $ GoalMismatch "apply" t
-    Nothing -> throwError $ UndefinedHypothesis f
 
 -- | Looks through the context, trying to find a function that could potentially be applied.
 apply_ :: Tactic ()
 apply_ = mkTactic $ \j@(Judgement hy g) ->
-  case Tl.find (\case (Function args ret) -> ret == g; _ -> False) hy of
-    Just (n, (Function args ret)) -> do
-      foldl AppE (VarE n) <$> traverse (subgoal . Judgement hy) args
+  case Tl.find (\case (_, Function args ret) -> ret == g; _ -> False) hy of
+    Just (_, (f, Function args ret)) -> do
+      foldl AppE f <$> traverse (subgoal . Judgement hy) args
     Nothing -> throwError $ GoalMismatch "apply_" g
 
+-- | The induction tactic works on inductive data types.
 induction :: String -> Tactic ()
-induction n = mkTactic $ \j@(Judgement hy g) ->
+induction n = mkTactic $ \j@(Judgement hy goal) ->
   case (J.lookup n j) of
-    Just (n, ConT tyn) -> do
-      ctrs <- lookupConstructors tyn
-      -- TODO: Check to see if there are any instances of recursion
+    Just (x, Constructor indn tvars) -> do
+      ctrs <- lookupConstructors indn
+      -- We need to check that any instances of recursion are
+      -- replaced by the goal type...
+      -- Furthermore, every time we use one of those "variables",
+      -- we need to replace the usage with a recursive call?
+      -- This means that we need to generate something like "fix"
+      -- let genSubgoal = d
+      (ffix, ffixn) <- fresh "f"
+      (xfix, xfixn) <- fresh "x"
       matches <- for ctrs $ \(DCon cn tys) -> do
-        ns <- traverse (const wildcard) tys
-        body <- subgoal (J.extends (Tl.fromList $ zip ns tys) j)
-        return $ Match (ConP cn (fmap VarP ns)) (NormalB body) []
+        -- Generate names for each of the parameters of the constructor
+        ns <- traverse (const (fresh "ind")) tys
+        -- Generate all of the pattern variables
+        let pats = fmap (VarP . snd) ns
+        -- If we see an instance of a recursive datatype, replace the type with the type of goal
+        -- and the expression with a reference to the fix point
+        let newHyps = zipWith (\(s, n) -> \case
+                             Constructor tyn tv | tyn == indn -> (s, (AppE (VarE ffixn) (VarE n), goal))
+                             t -> (s, (VarE n, t))) ns tys
+        body <- subgoal (J.extends (Tl.fromList newHyps) $ J.remove n j)
+        return $ Match (ConP cn pats) (NormalB body) []
 
-      return $ CaseE (VarE n) matches
+      -- In order to get the recursive calls just right, we can use `fix`.
+      return $ fixExp (LamE [VarP ffixn, VarP xfixn] (CaseE (VarE xfixn) matches)) x
     Just (_, t) -> throwError $ GoalMismatch "induction" t
     Nothing -> throwError $ UndefinedHypothesis n
+  where
+
+
+    fixExp :: Exp -> Exp -> Exp
+    fixExp f a = AppE (AppE (VarE 'fix) f) a
 
 -- | Tries to automatically solve a given goal.
 auto :: Int -> Tactic ()

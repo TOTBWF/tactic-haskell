@@ -53,7 +53,8 @@ tuple = go []
 pattern Tuple ts <- (tuple -> Just ts)
 
 constructor :: Type -> Maybe (Name, [Type])
-constructor = go []
+constructor (ConT n) = Just (n, [])
+constructor ty = go [] ty
   where
     go :: [Type] -> Type -> Maybe (Name, [Type])
     go ts (AppT (ConT n) t) = Just (n, t:ts)

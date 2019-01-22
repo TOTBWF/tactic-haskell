@@ -7,6 +7,7 @@
 --
 --
 -- = Tactics
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -23,10 +24,11 @@ module Language.Haskell.Tactic.Internal.Tactic
   , mkTactic
   , subgoal
   -- ** Name Management
+  , unique
   , fresh
-  , wildcard
   -- ** Reify Wrappers
   , lookupConstructors
+  , lookupVarType
   -- * Running Tactics
   , tactic
   -- * Re-Exports
@@ -42,8 +44,8 @@ import Control.Monad.Morph
 import Data.Foldable
 import Data.Traversable
 import Data.Bifunctor
-import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Pipes.Core
 import Pipes.Lift
@@ -68,7 +70,7 @@ newtype Tactic a = Tactic { unTactic :: StateT TacticState (ProofStateT (ExceptT
 
 data TacticState = TacticState
   { goal :: Judgement
-  , boundVars :: Set String
+  , boundVars :: Map String Int
   }
 
 instance Alt (Tactic) where (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
@@ -107,7 +109,7 @@ try t = t <!> (pure ())
 
 runTactic :: Tactic () -> Judgement -> Q (Exp, [Judgement])
 runTactic (Tactic t) j = do
-  r <- runExceptT $ flip runStateT [] $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t $ TacticState j Set.empty)
+  r <- runExceptT $ flip runStateT [] $ runEffect $ server +>> (hoist lift $ unProofStateT $ execStateT t $ TacticState j Map.empty)
   case r of
     Left err -> hoistError err
     Right (e, st) -> return $ (e, reverse $ fmap goal st)
@@ -137,37 +139,46 @@ subgoal j = do
 liftQ :: Q a -> Tac a
 liftQ = lift . lift . lift
 
-bindVar :: String -> Tac Name
-bindVar nm = do
-  modify (\s -> s { boundVars = Set.insert nm $ boundVars s })
-  liftQ $ newName nm
-
 -- | Tries to create a name, and fails with @'DuplicateHypothesis'@ if the name is already taken.
 -- Furthermore, names that begin with '_' are reserved for wildcard names.
-fresh :: String -> Tac Name
-fresh "" = throwError $ InvalidHypothesisName "\"\""
-fresh nm = gets (isDefined nm . boundVars) >>= \case
-  True -> throwError $ DuplicateHypothesis nm
-  False -> bindVar nm
-  where
-    isDefined :: String -> Set String -> Bool
-    isDefined nm s = (head nm == '_') || (Set.member nm s)
+unique :: String -> Tac Name
+unique "" = throwError $ InvalidHypothesisName "\"\""
+unique n = gets (Map.member n . boundVars) >>= \case
+  True -> throwError $ DuplicateHypothesis n
+  False -> do
+    modify (\s -> s { boundVars = Map.insert n 1 $ boundVars s })
+    liftQ $ newName n
+  -- where
+  --   isDefined :: String -> Map String Int -> Bool
+  --   isDefined nm s = (head nm == '_') || (Map.member nm s)
 
--- | Creates a fresh wildcard name.
-wildcard :: Tac Name
-wildcard = do
-  -- The way this works is pretty hacky...
-  c <- gets (Set.size . Set.filter ((== '_') . head) . boundVars)
-  bindVar ("_" ++ show c)
+-- | Tries to create a name provided a base, potentially appending numbers to make it unique.
+-- Furthermore, names that begin with '_' are reserved for wildcard names.
+fresh :: String -> Tac (String, Name)
+fresh "" = throwError $ InvalidHypothesisName "\"\""
+fresh n = gets (Map.lookup n . boundVars) >>= \case
+  Just i -> do
+    modify (\s -> s { boundVars = Map.adjust (+ 1) n $ boundVars s })
+    let n' = n ++ show i
+    (n', ) <$> (liftQ $ newName n')
+  Nothing -> do
+    modify (\s -> s { boundVars = Map.insert n 1 $ boundVars s })
+    (n, ) <$> (liftQ $ newName n)
 
 -- | Looks up a type's constructors.
 lookupConstructors :: Name -> Tac ([DCon])
 lookupConstructors n = (liftQ $ reify n) >>= \case
   TyConI (DataD _ _ _ _ cs _) -> for cs $ \case
     NormalC cn ts -> return $ DCon cn (fmap snd ts)
-    c -> throwError $ NotImplemented $ "lookupType: Constructors of form" ++ show c
-  i -> throwError $ NotImplemented $ "lookupType: Declarations of form" ++ show i
+    c -> throwError $ NotImplemented $ "lookupConstructors: Constructors of form" ++ show c
+  i -> throwError $ NotImplemented $ "lookupConstructors: Declarations of form" ++ show i
 
+-- | Looks up the the type of a variable binding.
+lookupVarType :: Name -> Tac Type
+lookupVarType n = (liftQ $ reify n) >>= \case
+  VarI _ t _ -> return t
+  DataConI _ t _ -> return t
+  i -> throwError $ NotImplemented $ "lookupVarType: Not a VarI " ++ show i
 
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
