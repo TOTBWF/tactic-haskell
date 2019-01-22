@@ -12,6 +12,7 @@ data Nat = Z | S Nat
   deriving (Show)
 
 data List a = Nil | Cons a (List a)
+  deriving (Show)
 
 tactic "pair" [t| forall a b. a -> b -> (a,b) |] $ do
   forall
@@ -32,6 +33,18 @@ tactic "if_" [t| forall a. a -> a -> Bool -> a |] $ do
   forall
   intros ["f", "t", "b"]
   induction "b" <@> [exact "f", exact "t"]
+
+-- No typeclass support yet for `apply`
+add :: Int -> Int -> Int
+add = (+)
+
+tactic "sum'" [t| List Int -> Int |] $ do
+  intro "x"
+  induction "x" <@>
+    [ exact (0 :: Integer)
+    , do
+        apply 'add <@> [exact "ind", exact "ind1"]
+    ]
 
 tactic "plus" [t| Nat -> Nat -> Nat |] $ do
   intros ["n", "m"]

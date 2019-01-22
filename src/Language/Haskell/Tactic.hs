@@ -151,9 +151,9 @@ instance Apply String where
 instance Apply Name where
   apply n = mkTactic $ \j@(Judgement hy g) ->
     lookupVarType n >>= \case
-      (Function args ret) | ret == g -> do
-        foldl AppE (ConE n) <$> traverse (subgoal . Judgement hy) args
-      t -> throwError $ GoalMismatch "apply" t
+      (x, Function args ret) | ret == g -> do
+        foldl AppE x <$> traverse (subgoal . Judgement hy) args
+      (_, t) -> throwError $ GoalMismatch "apply" t
 
 -- | Looks through the context, trying to find a function that could potentially be applied.
 apply_ :: Tactic ()
@@ -168,7 +168,7 @@ induction :: String -> Tactic ()
 induction n = mkTactic $ \j@(Judgement hy goal) ->
   case (J.lookup n j) of
     Just (x, Constructor indn tvars) -> do
-      ctrs <- lookupConstructors indn
+      ctrs <- lookupConstructors indn tvars
       -- Because this can be used inside of something like an apply,
       -- we need to use "fix"
       (ffix, ffixn) <- fresh "ffix"
@@ -178,8 +178,7 @@ induction n = mkTactic $ \j@(Judgement hy goal) ->
         ns <- traverse (const (fresh "ind")) tys
         -- Generate all of the pattern variables
         let pats = fmap (VarP . snd) ns
-        -- If we see an instance of a recursive datatype, replace the type with the type of goal
-        -- and the expression with a reference to the fix point
+        -- If we see an instance of a recursive datatype, replace the type with the type of goal -- and the expression with a reference to the fix point
         let newHyps = zipWith (\(s, n) -> \case
                              Constructor tyn tv | tyn == indn -> (s, (AppE (VarE ffixn) (VarE n), goal))
                              t -> (s, (VarE n, t))) ns tys

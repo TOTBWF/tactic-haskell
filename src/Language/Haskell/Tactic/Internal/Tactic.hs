@@ -30,6 +30,8 @@ module Language.Haskell.Tactic.Internal.Tactic
   , lookupConstructors
   , lookupVarType
   , implements
+  -- ** Debugging helpers
+  , debugPrint
   -- * Running Tactics
   , tactic
   -- * Re-Exports
@@ -52,6 +54,7 @@ import Pipes.Core
 import Pipes.Lift
 import qualified Text.PrettyPrint as P (render)
 import Language.Haskell.TH
+import Language.Haskell.TH.Syntax hiding (lift)
 import Language.Haskell.TH.Ppr hiding (split)
 import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$), ($$))
 import qualified Language.Haskell.TH.PprLib as P
@@ -168,23 +171,34 @@ fresh n = gets (Map.lookup n . boundVars) >>= \case
     (n, ) <$> (liftQ $ newName n)
 
 -- | Looks up a type's constructors.
-lookupConstructors :: Name -> Tac ([DCon])
-lookupConstructors n = (liftQ $ reify n) >>= \case
-  TyConI (DataD _ _ _ _ cs _) -> for cs $ \case
-    NormalC cn ts -> return $ DCon cn (fmap snd ts)
-    c -> throwError $ NotImplemented $ "lookupConstructors: Constructors of form" ++ show c
+lookupConstructors :: Name -> [Type] -> Tac ([DCon])
+lookupConstructors n inst  = (liftQ $ reify n) >>= \case
+  TyConI (DataD _ _ tvarBndrs _ cs _) -> do
+    let instMap = Map.fromList $ zip (fmap (\case (PlainTV tn) -> tn; (KindedTV tn _) -> tn) tvarBndrs) inst
+    let instantiate (_, t) = case t of
+          VarT tv -> Map.findWithDefault t tv instMap
+          _ -> t
+    for cs $ \case
+      NormalC cn ts -> return $ DCon cn $ fmap instantiate ts
+      c -> throwError $ NotImplemented $ "lookupConstructors: Constructors of form" ++ show c
   i -> throwError $ NotImplemented $ "lookupConstructors: Declarations of form" ++ show i
+  where
 
--- | Looks up the the type of a variable binding.
-lookupVarType :: Name -> Tac Type
+-- | Looks up the the type of a variable binding, along with
+-- the expression form of the name
+lookupVarType :: Name -> Tac (Exp, Type)
 lookupVarType n = (liftQ $ reify n) >>= \case
-  VarI _ t _ -> return t
-  DataConI _ t _ -> return t
+  VarI _ t _ -> return (VarE n, t)
+  DataConI _ t _ -> return (ConE n, t)
   i -> throwError $ NotImplemented $ "lookupVarType: Not a VarI " ++ show i
 
 -- | Check to see if a type implements a typeclass
 implements :: Type -> Name -> Tac Bool
 implements ty n = liftQ $ isInstance n [ty]
+
+-- | Prints a debug message as a warning
+debugPrint :: String -> Tac ()
+debugPrint msg = liftQ $ reportWarning $ "DEBUG:" ++ msg
 
 data TacticError
   = TypeMismatch { expectedType :: Type, expr :: Exp, exprType :: Type }
