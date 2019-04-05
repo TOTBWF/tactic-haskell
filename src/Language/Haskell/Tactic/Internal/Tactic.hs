@@ -17,8 +17,12 @@ module Language.Haskell.Tactic.Internal.Tactic
   , TacticError(..)
   -- * Built-ins
   , (<@>)
+  , match
   , (?)
+  -- * Backtracking
   , try
+  , choice
+  , progress
   -- * Tactic Construction
   , Tac
   , mkTactic
@@ -51,7 +55,7 @@ import qualified Data.Map.Strict as Map
 import Pipes.Core
 import Pipes.Lift
 import qualified Text.PrettyPrint as P (render)
-import Language.Haskell.TH
+import Language.Haskell.TH hiding (match)
 import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
 import qualified Language.Haskell.TH.PprLib as P
 
@@ -73,9 +77,32 @@ data TacticState = TacticState
 
 instance Alt (Tactic) where (Tactic t1) <!> (Tactic t2) = Tactic $ StateT $ \j -> (runStateT t1 j) <!> (runStateT t2 j)
 
--- | Tries to apply a tactic, and backtracks if the tactic fails.
+-- | @try t@ tries to apply a tactic @t@, and applies the identity tactic if
+-- it fails.
 try :: Tactic () -> Tactic ()
 try t = t <!> (pure ())
+
+-- | @choice ts@ tries to apply a series of tactics @ts@, and commits
+-- to the 1st tactic that succeeds. If they all fail, then @NoApplicableTactic@
+-- is thrown.
+choice :: [Tactic ()] -> Tactic ()
+choice [] = throwError NoApplicableTactic
+choice (t:ts) = t <!> choice ts
+
+-- | @progress t@ applies the tactic @t@, and throws a @NoProgress@ if
+-- the resulting subgoals are all syntactically equal to the initial goal.
+progress :: Tactic () -> Tactic ()
+progress (Tactic t) = Tactic $ StateT $ \s -> do
+  s' <- execStateT t s
+  if (goal s' == goal s)
+    then throwError NoProgress
+    else return ((), s')
+
+-- | @match f@ takes a function from a judgement to a @Tactic@, and
+-- then applies the resulting @Tactic@.
+match :: (Judgement -> Tactic ()) -> Tactic ()
+match f = Tactic $ StateT $ \s -> runStateT (unTactic $ f $ goal s) s
+
 
 -- | @t \<\@> ts@ Applies the tactic @t@, then applies each of the tactics in the list to one of the resulting subgoals.
 -- If @ts@ is shorter than the list of resulting subgoals, the identity tactic will be applied to the remainder.
@@ -197,6 +224,8 @@ data TacticError
   | DuplicateHypothesis String
   | InvalidHypothesisName String
   | UnsolvedGoals [Judgement]
+  | NoProgress
+  | NoApplicableTactic
   | NotImplemented String
 
 render :: Doc -> String
@@ -220,6 +249,8 @@ hoistError e =
           P.text "Invalid Hypothesis Name" <+> P.text v
         UnsolvedGoals ps ->
           P.text "Unsolved Subgoals" $+$ ppr ps
+        NoProgress -> P.text "No Progress"
+        NoApplicableTactic -> P.text "No Applicable Tactic"
         NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
   in fail $ render $ P.text "Tactic Error:" <+> errText
 

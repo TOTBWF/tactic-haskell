@@ -38,7 +38,7 @@ import Control.Monad.Except
 import Data.Foldable
 import Data.Traversable
 
-import Language.Haskell.TH
+import Language.Haskell.TH hiding (match)
 
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 import Language.Haskell.Tactic.Internal.Telescope ((@>))
@@ -194,5 +194,13 @@ auto 0 = pure ()
 auto n = do
   try forall
   try intros_
-  try (split <!> assumption <!> apply_)
-  auto (n - 1)
+  choice
+    [ split >> auto (n - 1)
+    , assumption >> auto (n - 1)
+    , match $ choice . fmap (\s -> apply s >> progress (auto (n - 1)) ) . matchingFns
+    ]
+  where
+    matchingFns :: Judgement -> [String]
+    matchingFns (Judgement hys t) = fmap fst $ Tl.toList $ flip Tl.filter hys $ \case
+      (_, Function _ ret) -> ret == t
+      _ -> False
