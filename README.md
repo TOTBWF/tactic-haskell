@@ -35,8 +35,7 @@ tactic "myFold" [t| forall a b. (a -> b -> b) -> b -> [a] -> b |] $ auto 5
 ```
 
 ```haskell
-data Nat = Z | S Nat
-  deriving (Show)
+data Nat = Z | S Nat deriving (Show)
 
 tactic "plus" [t| Nat -> Nat -> Nat |] $ do
   intros ["n", "m"]
@@ -51,10 +50,14 @@ tactic "plus" [t| Nat -> Nat -> Nat |] $ do
 
 For more examples, see the `samples/` directory.
 
-## Future Plans
-- (True) Dependent Types
-- More exotic types (Quotient types, Intersection Types, etc)
+## TODOs 
+- Add support for type classes.
+- Allow `auto` to use at top-level bindings/imported functions.
+- Tidy up the output of `induction`
+- Create a GHCI wrapper that allows usage from the command line/as an editor tool
 
 ## Disclaimer
 This is very much a work in progress! `tactic-haskell` makes
 no promises about anything at this stage. It could work perfectly, or it could decide to burn down your house.
+Also, even though `auto` is good at it's job, it isn't perfect, make sure to check the output by
+using `debugTactic`. 
