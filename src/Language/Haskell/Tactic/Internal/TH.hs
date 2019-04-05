@@ -10,12 +10,12 @@
 -- This module exports some handy TH AST pattern synonyms
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Language.Haskell.Tactic.Internal.TH
   ( pattern Arrow
   , pattern Function
   , pattern Tuple
   , pattern Constructor
-  , pattern List
   , DCon(..)
   ) where
 
@@ -55,6 +55,7 @@ pattern Tuple ts <- (tuple -> Just ts)
 
 constructor :: Type -> Maybe (Name, [Type])
 constructor (ConT n) = Just (n, [])
+constructor (AppT ListT t) = Just (''[], [t])
 constructor ty = go [] ty
   where
     go :: [Type] -> Type -> Maybe (Name, [Type])
@@ -65,10 +66,6 @@ constructor ty = go [] ty
 -- | Pattern for a constructor application
 pattern Constructor :: Name -> [Type] -> Type
 pattern Constructor n ts  <- (constructor -> Just (n, ts))
-
--- | Pattern for the list type
-pattern List :: Type -> Type
-pattern List t = AppT ListT t
 
 -- | Simple Data Constructor Type
 data DCon = DCon Name [Type]

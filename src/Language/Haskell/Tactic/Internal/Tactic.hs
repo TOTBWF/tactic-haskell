@@ -12,6 +12,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Language.Haskell.Tactic.Internal.Tactic
   ( Tactic
   , TacticError(..)
@@ -23,6 +24,7 @@ module Language.Haskell.Tactic.Internal.Tactic
   , try
   , choice
   , progress
+  , solve
   -- * Tactic Construction
   , Tac
   , mkTactic
@@ -38,6 +40,7 @@ module Language.Haskell.Tactic.Internal.Tactic
   , debugPrint
   -- * Running Tactics
   , tactic
+  , debugTactic
   -- * Re-Exports
   , Alt(..)
   ) where
@@ -99,6 +102,9 @@ progress (Tactic t) = Tactic $ StateT $ \s -> do
   if (goal s' == goal s)
     then throwError NoProgress
     else return ((), s')
+
+solve :: Tactic () -> Tactic ()
+solve t = t >> throwError NoProgress
 
 -- | @match f@ takes a function from a judgement to a @Tactic@, and
 -- then applies the resulting @Tactic@.
@@ -199,9 +205,9 @@ lookupConstructors n inst  = (liftQ $ reify n) >>= \case
           _ -> t
     for cs $ \case
       NormalC cn ts -> return $ DCon cn $ fmap instantiate ts
-      c -> throwError $ NotImplemented $ "lookupConstructors: Constructors of form" ++ show c
-  i -> throwError $ NotImplemented $ "lookupConstructors: Declarations of form" ++ show i
-  where
+      InfixC t1 cn t2 -> return $ DCon cn [instantiate t1, instantiate t2]
+      c -> throwError $ NotImplemented $ "lookupConstructors: Constructors of form " ++ show c
+  i -> throwError $ NotImplemented $ "lookupConstructors: Declarations of form " ++ show i
 
 -- | Looks up the the type of a variable binding, along with
 -- the expression form of the name
@@ -264,5 +270,19 @@ tactic nm qty tac = do
   ty <- qty
   (ext, subgoals) <- runTactic tac $ J.empty ty
   case subgoals of
-    [] -> return [ValD (VarP decName) (NormalB $ ext) []]
+    [] -> do
+      return [ValD (VarP decName) (NormalB $ ext) []]
+    _ -> hoistError $ UnsolvedGoals subgoals
+
+-- | @debugTactic nm [t| ty |] tac@ behaves exactly the same as @tactic@,
+-- but it prints out the resulting expression as a warning.
+debugTactic :: String -> Q Type -> Tactic () -> Q [Dec]
+debugTactic nm qty tac = do
+  decName <- newName nm
+  ty <- qty
+  (ext, subgoals) <- runTactic tac $ J.empty ty
+  case subgoals of
+    [] -> do
+      reportWarning $ render $ ppr ext
+      return [ValD (VarP decName) (NormalB $ ext) []]
     _ -> hoistError $ UnsolvedGoals subgoals

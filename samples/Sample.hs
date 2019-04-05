@@ -4,6 +4,7 @@
 module Sample where
 
 
+import Data.Function
 import Language.Haskell.Tactic
 
 data Nat = Z | S Nat
@@ -55,3 +56,9 @@ tactic "plus" [t| Nat -> Nat -> Nat |] $ do
 
 tactic "trick" [t| forall a b c. Either a b -> (a -> c) -> (b -> c) -> c |] $
   auto 5
+
+tactic "myFold" [t| forall a b. (a -> b -> b) -> b -> [a] -> b |] $ do
+  auto 5
+
+-- myFold' :: (a -> b -> b) -> b -> List a -> b
+-- myFold' f b as = fix (\ffix x -> case x of Nil -> b; Cons ind ind1 -> f ind (ffix ind1)) as

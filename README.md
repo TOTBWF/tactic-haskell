@@ -26,6 +26,14 @@ tactic "foo" [t| forall a b c. a -> (a -> b) -> (b -> c) -> (a,c)|] $ do
   auto 5
 ```
 
+``` haskell
+tactic "either" [t| forall a b c. (a -> c) -> (b -> c) -> Either a b -> c |] $ auto 5
+```
+
+``` haskell
+tactic "myFold" [t| forall a b. (a -> b -> b) -> b -> [a] -> b |] $ auto 5
+```
+
 ```haskell
 data Nat = Z | S Nat
   deriving (Show)

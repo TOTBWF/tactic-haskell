@@ -29,6 +29,7 @@ module Language.Haskell.Tactic
   , auto
   -- * Running Tactics
   , tactic
+  , debugTactic
   -- * Re-Exports
   , Alt(..)
   ) where
@@ -159,6 +160,8 @@ apply_ = mkTactic $ \(Judgement hy g) ->
       foldl AppE f <$> traverse (subgoal . Judgement hy) args
     _ -> throwError $ GoalMismatch "apply_" g
 
+
+
 -- | The induction tactic works on inductive data types.
 induction :: String -> Tactic ()
 induction n = mkTactic $ \j@(Judgement _ goal) ->
@@ -180,7 +183,6 @@ induction n = mkTactic $ \j@(Judgement _ goal) ->
                              t -> (s, (VarE n, t))) ns tys
         body <- subgoal (J.extends (Tl.fromList newHyps) $ J.remove n j)
         return $ Match (ConP cn pats) (NormalB body) []
-
       return $ fixExp (LamE [VarP ffixn, VarP xfixn] (CaseE (VarE xfixn) matches)) x
     Just (_, t) -> throwError $ GoalMismatch "induction" t
     Nothing -> throwError $ UndefinedHypothesis n
@@ -196,13 +198,13 @@ auto n = do
   try intros_
   choice
     [ split >> auto (n - 1)
-    , assumption >> auto (n - 1)
     , attemptOn apply matchingFns
     , attemptOn induction matchingCtrs
+    , assumption >> auto (n - 1) -- This should come last to prevent any stupidity regarding folds/etc
     ]
   where
     attemptOn :: (String -> Tactic ()) -> (Judgement -> [String]) -> Tactic ()
-    attemptOn ft fv = match $ choice . fmap (\s -> ft s >> progress (auto (n - 1))) . fv
+    attemptOn ft fv = match $ choice . fmap (\s -> ft s >> solve (auto (n - 1))) . fv
 
     getVars :: Telescope String (Exp, Type) -> (Type -> Bool) -> [String]
     getVars hys pred = fmap fst $ Tl.toList $ Tl.filter pred $ fmap snd hys
