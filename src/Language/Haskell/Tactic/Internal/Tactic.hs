@@ -44,9 +44,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.Morph
 
-import Data.Foldable
 import Data.Traversable
-import Data.Bifunctor
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 
@@ -54,15 +52,11 @@ import Pipes.Core
 import Pipes.Lift
 import qualified Text.PrettyPrint as P (render)
 import Language.Haskell.TH
-import Language.Haskell.TH.Syntax hiding (lift)
-import Language.Haskell.TH.Ppr hiding (split)
-import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$), ($$))
+import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
 import qualified Language.Haskell.TH.PprLib as P
 
 import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import qualified Language.Haskell.Tactic.Internal.Judgement as J
-import Language.Haskell.Tactic.Internal.Telescope (Telescope, (@>))
-import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 import Language.Haskell.Tactic.Internal.ProofState
 import Language.Haskell.Tactic.Internal.TH
 
@@ -128,11 +122,7 @@ type Tac a  = StateT TacticState (Client TacticState Exp (ExceptT TacticError Q)
 
 -- | Creates a @'Tactic'@. See @'subgoal'@ for the rest of the API.
 mkTactic :: (Judgement -> Tac Exp) -> Tactic ()
-mkTactic f = Tactic $ do
-  j <- gets (goal)
-  StateT $ \s -> ProofStateT $ do
-     (e, s') <- (\s -> request ((), s)) >\\ runStateT (f (goal s)) s
-     return e
+mkTactic f = Tactic $ StateT $ \s -> ProofStateT $ (\s' -> request ((), s')) >\\ evalStateT (f $ goal s) s
 
 -- | Creates a subgoal, and returns the extract.
 subgoal :: Judgement -> Tac Exp

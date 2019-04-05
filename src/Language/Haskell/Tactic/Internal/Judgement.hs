@@ -10,10 +10,7 @@ module Language.Haskell.Tactic.Internal.Judgement
 
 import Prelude hiding (lookup)
 
-import Data.Bifunctor
-
 import Language.Haskell.TH
-import Language.Haskell.TH.Ppr
 import Language.Haskell.TH.PprLib hiding (empty, (<>))
 
 import Language.Haskell.Tactic.Internal.Telescope (Telescope(..), (@>))
@@ -21,7 +18,7 @@ import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
 
 -- | A @'Judgement'@ consists of a series of hypotheses (in this case, @'Name'@s bound to @'Type'@s), along with a goal (@'Type'@).
 data Judgement = Judgement (Telescope String (Exp, Type)) Type
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance Ppr Judgement where
   ppr (Judgement hyps goal) =

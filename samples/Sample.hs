@@ -3,9 +3,7 @@
 {-# OPTIONS_GHC -ddump-splices #-}
 module Sample where
 
-import Control.Applicative
 
-import Language.Haskell.TH
 import Language.Haskell.Tactic
 
 data Nat = Z | S Nat
@@ -54,3 +52,6 @@ tactic "plus" [t| Nat -> Nat -> Nat |] $ do
        apply 'S
        exact "ind"
     ]
+
+-- tactic "trick" [t| forall a b c. Either a b -> (a -> c) -> (b -> c) -> c |] $
+--   auto 5

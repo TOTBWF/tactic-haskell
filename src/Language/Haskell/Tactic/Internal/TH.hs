@@ -19,11 +19,10 @@ module Language.Haskell.Tactic.Internal.TH
   , DCon(..)
   ) where
 
-import Data.Bifunctor
-
 import Language.Haskell.TH
 
 -- | Pattern for a single function arrow
+pattern Arrow :: Type -> Type -> Type
 pattern Arrow t1 t2 = AppT (AppT ArrowT t1) t2
 
 function :: Type -> Maybe ([Type], Type)
@@ -37,6 +36,7 @@ function (Arrow t1 t2) =
 function _ = Nothing
 
 -- | Pattern for a function of any given arity
+pattern Function :: [Type] -> Type -> Type
 pattern Function args ret <- (function -> Just (args, ret))
 
 tuple :: Type -> Maybe [Type]
@@ -50,6 +50,7 @@ tuple = go []
     go _ _ = Nothing
 
 -- | Pattern for a tuple of any given arity
+pattern Tuple :: [Type] -> Type
 pattern Tuple ts <- (tuple -> Just ts)
 
 constructor :: Type -> Maybe (Name, [Type])
@@ -62,9 +63,11 @@ constructor ty = go [] ty
     go _ _ = Nothing
 
 -- | Pattern for a constructor application
+pattern Constructor :: Name -> [Type] -> Type
 pattern Constructor n ts  <- (constructor -> Just (n, ts))
 
 -- | Pattern for the list type
+pattern List :: Type -> Type
 pattern List t = AppT ListT t
 
 -- | Simple Data Constructor Type

@@ -22,14 +22,13 @@ import Prelude hiding (filter, lookup)
 import Data.Bifunctor
 
 import Language.Haskell.TH
-import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Ppr
 import qualified Language.Haskell.TH.PprLib as P
 
 data Telescope v t
   = Empty
   | Snoc (Telescope v t) v t
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Show, Eq, Functor, Foldable, Traversable)
 
 instance (Ppr v, Ppr t) => Ppr (Telescope v t) where
   ppr tl = commaSepWith (\(x,t) -> ppr x P.<> P.text "::" P.<> ppr t) (toList tl)
@@ -43,10 +42,10 @@ instance Monoid (Telescope v t) where
   mempty = Empty
 
 instance Bifunctor Telescope where
-  first f Empty = Empty
+  first _ Empty = Empty
   first f (Snoc tl v t) = Snoc (first f tl) (f v) t
 
-  second f Empty = Empty
+  second _ Empty = Empty
   second f (Snoc tl v t) = Snoc (second f tl) v (f t)
 
 empty :: Telescope v t
@@ -98,12 +97,12 @@ lookup x (Snoc tl y t) | x == y = Just t
                        | otherwise = lookup x tl
 
 find :: (t -> Bool) -> Telescope v t -> Maybe (v, t)
-find f Empty = Nothing
+find _ Empty = Nothing
 find f (Snoc tl x t) | f t = Just (x, t)
                      | otherwise = find f tl
 
 findVar :: (v -> Bool) -> Telescope v t -> Maybe (v, t)
-findVar f Empty = Nothing
+findVar _ Empty = Nothing
 findVar f (Snoc tl x t) | f x = Just (x, t)
                         | otherwise = findVar f tl
 

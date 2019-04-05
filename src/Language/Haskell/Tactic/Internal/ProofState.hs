@@ -21,11 +21,8 @@ module Language.Haskell.Tactic.Internal.ProofState
   ) where
 
 import Data.Functor.Alt
-import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Fail as F
-import Control.Monad.Trans
-import Control.Monad.IO.Class
 
 import Pipes.Core
 

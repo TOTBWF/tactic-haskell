@@ -37,15 +37,11 @@ import Control.Monad.Except
 
 import Data.Foldable
 import Data.Traversable
-import Data.Function
 
 import Language.Haskell.TH
-import Language.Haskell.TH.Ppr hiding (split)
-import Language.Haskell.TH.PprLib (Doc, (<+>), ($+$))
-import qualified Language.Haskell.TH.PprLib as P
 
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
-import Language.Haskell.Tactic.Internal.Telescope (Telescope(..), (@>))
+import Language.Haskell.Tactic.Internal.Telescope ((@>))
 import qualified Language.Haskell.Tactic.Internal.Judgement as J
 import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import Language.Haskell.Tactic.Internal.TH
@@ -57,26 +53,26 @@ class Exact e where
   exact :: e -> Tactic ()
 
 instance Exact String where
-  exact n = mkTactic $ \j@(Judgement hy g) ->
+  exact n = mkTactic $ \j@(Judgement _ g) ->
     case J.lookup n j of
       Just (e, t) -> if (t == g) then return e else throwError $ TypeMismatch g e t
       Nothing -> throwError $ UndefinedHypothesis n
 
 instance Exact Name where
-  exact n = mkTactic $ \(Judgement hy g) -> do
+  exact n = mkTactic $ \(Judgement _ g) -> do
     (e, t) <- lookupVarType n
     case (t == g) of
       True -> return e
       False -> throwError $ TypeMismatch g e t
 
 instance Exact Integer where
-  exact i = mkTactic $ \(Judgement hy g) -> implements g ''Num >>= \case
+  exact i = mkTactic $ \(Judgement _ g) -> implements g ''Num >>= \case
     True -> return $ AppE (VarE 'fromInteger) (LitE $ IntegerL i)
     False -> throwError $ GoalMismatch "exact" g
 
 -- | Searches the hypotheses, looking for one that matches the goal type.
 assumption :: Tactic ()
-assumption = mkTactic $ \j@(Judgement hy g) ->
+assumption = mkTactic $ \(Judgement hy g) ->
   case Tl.find ((== g) . snd) hy of
     Just (_,(e, _)) -> return e
     Nothing -> throwError $ GoalMismatch "assumption" g
@@ -149,7 +145,7 @@ instance Apply String where
       Nothing -> throwError $ UndefinedHypothesis f
 
 instance Apply Name where
-  apply n = mkTactic $ \j@(Judgement hy g) ->
+  apply n = mkTactic $ \(Judgement hy g) ->
     lookupVarType n >>= \case
       (x, Function args ret) | ret == g -> do
         foldl AppE x <$> traverse (subgoal . Judgement hy) args
@@ -157,22 +153,22 @@ instance Apply Name where
 
 -- | Looks through the context, trying to find a function that could potentially be applied.
 apply_ :: Tactic ()
-apply_ = mkTactic $ \j@(Judgement hy g) ->
-  case Tl.find (\case (_, Function args ret) -> ret == g; _ -> False) hy of
-    Just (_, (f, Function args ret)) -> do
+apply_ = mkTactic $ \(Judgement hy g) ->
+  case Tl.find (\case (_, Function _ ret) -> ret == g; _ -> False) hy of
+    Just (_, (f, Function args _)) -> do
       foldl AppE f <$> traverse (subgoal . Judgement hy) args
-    Nothing -> throwError $ GoalMismatch "apply_" g
+    _ -> throwError $ GoalMismatch "apply_" g
 
 -- | The induction tactic works on inductive data types.
 induction :: String -> Tactic ()
-induction n = mkTactic $ \j@(Judgement hy goal) ->
+induction n = mkTactic $ \j@(Judgement _ goal) ->
   case (J.lookup n j) of
     Just (x, Constructor indn tvars) -> do
       ctrs <- lookupConstructors indn tvars
       -- Because this can be used inside of something like an apply,
       -- we need to use "fix"
-      (ffix, ffixn) <- fresh "ffix"
-      (xfix, xfixn) <- fresh "x"
+      (_, ffixn) <- fresh "ffix"
+      (_, xfixn) <- fresh "x"
       matches <- for ctrs $ \(DCon cn tys) -> do
         -- Generate names for each of the parameters of the constructor
         ns <- traverse (const (fresh "ind")) tys
@@ -180,7 +176,7 @@ induction n = mkTactic $ \j@(Judgement hy goal) ->
         let pats = fmap (VarP . snd) ns
         -- If we see an instance of a recursive datatype, replace the type with the type of goal -- and the expression with a reference to the fix point
         let newHyps = zipWith (\(s, n) -> \case
-                             Constructor tyn tv | tyn == indn -> (s, (AppE (VarE ffixn) (VarE n), goal))
+                             Constructor tyn _ | tyn == indn -> (s, (AppE (VarE ffixn) (VarE n), goal))
                              t -> (s, (VarE n, t))) ns tys
         body <- subgoal (J.extends (Tl.fromList newHyps) $ J.remove n j)
         return $ Match (ConP cn pats) (NormalB body) []
