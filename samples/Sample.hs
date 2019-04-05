@@ -53,5 +53,5 @@ tactic "plus" [t| Nat -> Nat -> Nat |] $ do
        exact "ind"
     ]
 
--- tactic "trick" [t| forall a b c. Either a b -> (a -> c) -> (b -> c) -> c |] $
---   auto 5
+tactic "trick" [t| forall a b c. Either a b -> (a -> c) -> (b -> c) -> c |] $
+  auto 5

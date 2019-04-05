@@ -91,6 +91,8 @@ choice (t:ts) = t <!> choice ts
 
 -- | @progress t@ applies the tactic @t@, and throws a @NoProgress@ if
 -- the resulting subgoals are all syntactically equal to the initial goal.
+-- TODO: Use alpha-equality rather than literal equality. However,
+-- That comes along with a big can of worms WRT type equality.
 progress :: Tactic () -> Tactic ()
 progress (Tactic t) = Tactic $ StateT $ \s -> do
   s' <- execStateT t s

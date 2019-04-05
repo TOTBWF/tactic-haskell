@@ -41,7 +41,7 @@ import Data.Traversable
 import Language.Haskell.TH hiding (match)
 
 import qualified Language.Haskell.Tactic.Internal.Telescope as Tl
-import Language.Haskell.Tactic.Internal.Telescope ((@>))
+import Language.Haskell.Tactic.Internal.Telescope (Telescope, (@>))
 import qualified Language.Haskell.Tactic.Internal.Judgement as J
 import Language.Haskell.Tactic.Internal.Judgement (Judgement(..))
 import Language.Haskell.Tactic.Internal.TH
@@ -197,10 +197,22 @@ auto n = do
   choice
     [ split >> auto (n - 1)
     , assumption >> auto (n - 1)
-    , match $ choice . fmap (\s -> apply s >> progress (auto (n - 1)) ) . matchingFns
+    , attemptOn apply matchingFns
+    , attemptOn induction matchingCtrs
     ]
   where
+    attemptOn :: (String -> Tactic ()) -> (Judgement -> [String]) -> Tactic ()
+    attemptOn ft fv = match $ choice . fmap (\s -> ft s >> progress (auto (n - 1))) . fv
+
+    getVars :: Telescope String (Exp, Type) -> (Type -> Bool) -> [String]
+    getVars hys pred = fmap fst $ Tl.toList $ Tl.filter pred $ fmap snd hys
+
     matchingFns :: Judgement -> [String]
-    matchingFns (Judgement hys t) = fmap fst $ Tl.toList $ flip Tl.filter hys $ \case
-      (_, Function _ ret) -> ret == t
+    matchingFns (Judgement hys t) = getVars hys $ \case
+      (Function _ ret) -> ret == t
+      _ -> False
+
+    matchingCtrs :: Judgement -> [String]
+    matchingCtrs (Judgement hys _) = getVars hys $ \case
+      (Constructor _ _) -> True
       _ -> False
