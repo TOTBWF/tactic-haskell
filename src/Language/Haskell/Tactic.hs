@@ -17,6 +17,7 @@ module Language.Haskell.Tactic
   , try
   , Exact(..)
   , assumption
+  , using
   , forall
   , intro
   , intro_
@@ -70,6 +71,13 @@ instance Exact Integer where
   exact i = mkTactic $ \(Judgement _ g) -> implements g ''Num >>= \case
     True -> return $ AppE (VarE 'fromInteger) (LitE $ IntegerL i)
     False -> throwError $ GoalMismatch "exact" g
+
+-- | Bring an outside value into the context
+using :: Name -> Tactic ()
+using n = mkTactic $ \(Judgement hy g) -> do
+  (e, t) <- lookupVarType n
+  subgoal $ Judgement (hy @> (nameBase n, (e, t))) g
+
 
 -- | Searches the hypotheses, looking for one that matches the goal type.
 assumption :: Tactic ()
@@ -159,7 +167,6 @@ apply_ = mkTactic $ \(Judgement hy g) ->
     Just (_, (f, Function args _)) -> do
       foldl AppE f <$> traverse (subgoal . Judgement hy) args
     _ -> throwError $ GoalMismatch "apply_" g
-
 
 
 -- | The induction tactic works on inductive data types.
