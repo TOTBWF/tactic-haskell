@@ -29,13 +29,14 @@ dependencies:
 - mmorph >= 1 && < 2
 - semigroupoids >= 5 && < 6
 - template-haskell >= 2 && < 3
-- megaparsec >= 6 && < 7
+- th-abstraction >= 0.2
 - containers >= 0.5 && < 0.6
 - text >= 1 && < 2
 - prettyprinter >= 1 && < 2
 - pretty >= 1.1 && < 1.2
 - mtl >= 2 && < 3
 - ghc >= 8.4.3 && < 9
+- refinery
 
 library:
   source-dirs: src
