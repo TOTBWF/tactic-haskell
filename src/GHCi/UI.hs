@@ -141,6 +141,8 @@ import GHC.TopHandler ( topHandler )
 
 import GHCi.Leak
 
+import Language.Haskell.Tactic
+
 -----------------------------------------------------------------------------
 
 data GhciSettings = GhciSettings {
@@ -170,6 +172,7 @@ ghciCommands = map mkCmd [
   ("?",         keepGoing help,                 noCompletion),
   ("add",       keepGoingPaths addModule,       completeFilename),
   ("abandon",   keepGoing abandonCmd,           noCompletion),
+  ("auto",      keepGoing' (tacticCmd (auto 5)), completeIdentifier),
   ("break",     keepGoing breakCmd,             completeIdentifier),
   ("back",      keepGoing backCmd,              noCompletion),
   ("browse",    keepGoing' (browseCmd False),   completeModule),
@@ -215,7 +218,6 @@ ghciCommands = map mkCmd [
   ("steplocal", keepGoing stepLocalCmd,         completeIdentifier),
   ("stepmodule",keepGoing stepModuleCmd,        completeIdentifier),
   ("type",      keepGoing' typeOfExpr,          completeExpression),
-  ("tactic",    keepGoing' tacticCmd,           completeIdentifier),
   ("trace",     keepGoing traceCmd,             completeExpression),
   ("unadd",     keepGoingPaths unAddModule,     completeFilename),
   ("undef",     keepGoing undefineMacro,        completeMacro),
@@ -1957,9 +1959,9 @@ typeOfExpr str = handleSourceError GHC.printException $ do
 
 -----------------------------------------------------------------------------
 -- | @:tactic@ command
-tacticCmd :: String -> InputT GHCi ()
-tacticCmd str = handleSourceError GHC.printException $ withSession $ \hsc_env -> do
-  ext <- liftIO $ hscTactic hsc_env str
+tacticCmd :: Tactic () -> String -> InputT GHCi ()
+tacticCmd tac str = handleSourceError GHC.printException $ withSession $ \hsc_env -> do
+  ext <- liftIO $ hscTactic hsc_env tac str
   printForUser $ ppr ext
 
 -----------------------------------------------------------------------------

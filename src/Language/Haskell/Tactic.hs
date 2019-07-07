@@ -240,8 +240,9 @@ apply_ = rule $ \(Judgement hy g) ->
 -- | @choice ts@ tries to apply a series of tactics @ts@, and commits to the
 -- 1st tactic that succeeds. If they all fail, then @NoApplicableTactic@ is thrown
 choice :: [Tactic ()] -> Tactic ()
-choice = T.choice NoApplicableTactic
-
+choice [] = goal >>= (throwError . NoApplicableTactic)
+choice (t:ts) = t <!> choice ts
+-- choice = T.choice NoApplicableTactic
 -- | @solve t@ runs the tactic @t@, and fails with @NoProgress@ if there are subgoals
 -- remaining
 solve :: Tactic () -> Tactic ()
@@ -251,7 +252,7 @@ solve t = t >> throwError NoProgress
 auto :: Int -> Tactic ()
 auto 0 = pure ()
 auto n = do
-  try forall
+  many_ forall
   try intros_
   choice
     [ split >> auto (n - 1)

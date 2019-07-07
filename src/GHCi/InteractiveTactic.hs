@@ -81,40 +81,11 @@ hscParseType str = do
       liftIO $ dumpIfSet_dyn dflags Opt_D_dump_parsed "Parser AST" $ showAstData NoBlankSrcSpan ty
       return $ ty
 
-hscTactic :: HscEnv -> String -> IO (Maybe Expr)
-hscTactic hsc_env0 str = runInteractiveHsc hsc_env0 $ do
+hscTactic :: HscEnv -> Tactic () -> String -> IO (Maybe Expr)
+hscTactic hsc_env0 tac str = runInteractiveHsc hsc_env0 $ do
   hsc_env <- getHscEnv
   psTy <- hscParseType str
   (ty, _kind) <- ioMsgMaybe $ tcRnType hsc_env True psTy
-  (msgs, ext) <- ioMsgMaybe $ runTcInteractive hsc_env $ runTactic ty (auto 5)
+  (msgs, ext) <- ioMsgMaybe $ runTcInteractive hsc_env $ runTactic ty tac
   logWarningsReportErrors msgs
   return ext
--- hscParseThingWithLocation :: (Outputable thing, Data thing) => String -> Int
---                           -> Lexer.P thing -> String -> Hsc thing
--- hscParseThingWithLocation source linenumber parser str
---   = withTiming getDynFlags
---                (text "Parser [source]")
---                (const ()) $ {-# SCC "Parser" #-} do
---     dflags <- getDynFlags
-
---     let buf = stringToStringBuffer str
---         loc = mkRealSrcLoc (fsLit source) linenumber 1
-
---     case unP parser (mkPState dflags buf loc) of
---         PFailed warnFn span err -> do
---             logWarningsReportErrors (warnFn dflags)
---             handleWarnings
---             let msg = mkPlainErrMsg dflags span err
---             throwErrors $ unitBag msg
-
---         POk pst thing -> do
---             logWarningsReportErrors (getMessages pst dflags)
---             liftIO $ dumpIfSet_dyn dflags Opt_D_dump_parsed "Parser" (ppr thing)
---             liftIO $ dumpIfSet_dyn dflags Opt_D_dump_parsed_ast "Parser AST" $
---                                    showAstData NoBlankSrcSpan thing
---             return thing
-
--- tacticInteractive :: (GhcMonad m) => String -> m String
--- tacticInteractive str = withSession $ \hsc_env -> do
---   ty <- hscParseTh str
---   _h

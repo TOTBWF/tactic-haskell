@@ -89,7 +89,7 @@ data TacticError
   | UnsolvedGoals [Judgement]
   | UnificationError Type Type
   | NoProgress
-  | NoApplicableTactic
+  | NoApplicableTactic Judgement
   | NotImplemented String
 
 instance Outputable TacticError where
@@ -109,7 +109,7 @@ instance Outputable TacticError where
     UnificationError t1 t2 ->
       P.text "Unification Error:" <+> ppr t1 <+> P.text "and" <+> ppr t2
     NoProgress -> P.text "No Progress"
-    NoApplicableTactic -> P.text "No Applicable Tactic"
+    NoApplicableTactic goal -> P.text "No Applicable Tactic" $+$ ppr goal
     NotImplemented t -> P.text t <+> P.text "isn't implemented yet"
 
 notImplemented :: (Outputable a) => String -> a -> T b
