@@ -33,6 +33,7 @@ import qualified Data.Map.Strict as Map
 import ConLike
 import DataCon
 import HsExpr
+import HsExtension
 import Name
 import TcEnv
 import TyCon
@@ -90,8 +91,8 @@ lookupConstructors n inst = (lift $ liftTcM $ tcLookupGlobal n) >>= \case
 -- the expression form of the name
 lookupVarType :: Name -> RuleT Judgement Expr T (Expr, Type)
 lookupVarType n = (lift $ liftTcM $ tcLookupGlobal n) >>= \case
-  AnId i -> return (HsVar (noLoc i) , varType i)
-  AConLike (RealDataCon con) -> return (HsConLikeOut (RealDataCon con), dataConUserType con)
+  AnId i -> return (HsVar NoExt (noLoc i) , varType i)
+  AConLike (RealDataCon con) -> return (HsConLikeOut NoExt (RealDataCon con), dataConUserType con)
   i -> lift $ notImplemented "lookupVarType: Variable Type" i
 
 -- -- | Check to see if a type implements a typeclass

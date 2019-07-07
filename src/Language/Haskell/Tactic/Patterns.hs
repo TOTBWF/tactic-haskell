@@ -72,15 +72,17 @@ pattern Constructor n ts  <- (constructor -> Just (n, ts))
 data DCon = DCon Name [Type]
 
 var :: Var -> Expr
-var v = HsVar (noLoc v)
+var v = HsVar NoExt (noLoc v)
 
 lam :: Var -> Type -> Type -> Expr -> Expr
 lam v a b body =
-  let rhs = GRHSs [noLoc $ GRHS [] (noLoc body)] (noLoc EmptyLocalBinds)
-  in HsLam $ MG (noLoc [noLoc $ Match LambdaExpr [noLoc (VarPat (noLoc v))] rhs]) [a] b Generated
+  let rhs = GRHSs NoExt [noLoc $ GRHS NoExt [] (noLoc body)] (noLoc $ EmptyLocalBinds NoExt)
+      vpat = [noLoc $ VarPat NoExt (noLoc v)]
+      ty = MatchGroupTc [a] b
+  in HsLam NoExt $ MG ty (noLoc [noLoc $ Match NoExt LambdaExpr vpat rhs]) Generated
 
 tuple :: [Expr] -> Expr
-tuple exprs = ExplicitTuple (fmap (noLoc . Present . noLoc) exprs) Boxed
+tuple exprs = ExplicitTuple NoExt (fmap (noLoc . Present NoExt . noLoc) exprs) Boxed
 
 app :: Expr -> Expr -> Expr
-app e1 e2 = HsApp (noLoc e1) (noLoc e2)
+app e1 e2 = HsApp NoExt (noLoc e1) (noLoc e2)

@@ -24,22 +24,54 @@ ghc-options:
   - -fno-warn-name-shadowing
 
 dependencies:
+- array >= 0.5
 - base >= 4.7 && < 5
-- pipes >= 4 && < 5
+- bytestring >= 0.10
+- containers >= 0.6
+- deepseq >= 1.4
+- directory >= 1.3
+- filepath >= 1.4
+- ghc >= 8.6.5 && < 9
+- ghc-boot >= 8.6.5 && < 9
+- ghc-prim >= 0.5
+- ghci >= 8.6.5 && < 9
+- haskeline >= 0.7
 - mmorph >= 1 && < 2
+- mtl >= 2 && < 3
+- pipes >= 4 && < 5
+- pretty >= 1.1 && < 1.2
+- prettyprinter >= 1 && < 2
+- process >= 1.6
+- refinery
 - semigroupoids >= 5 && < 6
 - template-haskell >= 2 && < 3
-- th-abstraction >= 0.2
-- containers >= 0.5 && < 0.6
 - text >= 1 && < 2
-- prettyprinter >= 1 && < 2
-- pretty >= 1.1 && < 1.2
-- mtl >= 2 && < 3
-- ghc >= 8.4.3 && < 9
-- refinery
+- th-abstraction >= 0.2
+- time >= 1.8
+- transformers >= 0.5
+- unix >= 2.7
 
 library:
   source-dirs: src
+
+executables:
+  tactic-haskell:
+    main: app/Main.hs
+    cpp-options:
+      -DGHCI
+    cc-options:
+      -fPIC
+    c-sources:
+      cbits/hschooks.c
+    include-dirs:
+      cbits/
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+      - tactic-haskell
+
 
 tests:
   tactic-haskell-test:

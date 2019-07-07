@@ -43,12 +43,9 @@ module Language.Haskell.Tactic
 import Control.Monad.Except
 
 import Data.Foldable
-import Data.Traversable
 
-import HsExpr
 import Name
 import Id
-import SrcLoc
 import TyCoRep
 import Type
 
