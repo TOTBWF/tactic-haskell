@@ -161,8 +161,7 @@ defaultGhciSettings =
     }
 
 ghciWelcomeMsg :: String
-ghciWelcomeMsg = "GHCi, version " ++ cProjectVersion ++
-                 ": http://www.haskell.org/ghc/  :? for help"
+ghciWelcomeMsg = "tactic-haskell, version 0.01" ++ "(GHC " ++  cProjectVersion ++ ")"
 
 ghciCommands :: [Command]
 ghciCommands = map mkCmd [

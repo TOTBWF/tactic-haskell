@@ -97,7 +97,11 @@ main = do
    configureHandleEncoding
    GHC.defaultErrorHandler defaultFatalMessager defaultFlushOut $ do
     -- 1. extract the -B flag from the args
-    argv0 <- getArgs
+    argv00 <- getArgs
+    let argv0 =
+          if any (`elem` argv00) ["--info", "--interactive", "--make", "-c"]
+          then argv00
+          else "--interactive" : argv00
 
     let (minusB_args, argv1) = partition ("-B" `isPrefixOf`) argv0
         mbMinusB | null minusB_args = Nothing
