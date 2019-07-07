@@ -10,6 +10,7 @@
 {-# LANGUAGE ViewPatterns #-}
 module Language.Haskell.Tactic
   ( Tactic
+  , runTactic
   -- * Tactics
   , Exact(..)
   , assumption
@@ -44,8 +45,14 @@ import Control.Monad.Except
 
 import Data.Foldable
 
+import Bag
+import DynFlags
 import Name
 import Id
+import Outputable
+import ErrUtils
+import SrcLoc
+import TcRnMonad
 import TyCoRep
 import Type
 
@@ -61,6 +68,20 @@ import Language.Haskell.Tactic.Patterns
 import Language.Haskell.Tactic.Internal
 
 type Tactic a = TacticT Judgement Expr T a
+
+runTactic :: Type -> Tactic () -> TcM (Messages, Maybe Expr)
+runTactic ty tac = do
+  dflags <- getDynFlags
+  (runT mempty $ T.runTacticT tac  $ J.empty ty) >>= \case
+    Left err -> do
+      let errMsg = mkErrMsg dflags noSrcSpan neverQualify (ppr err)
+      return ((emptyBag, unitBag errMsg), Nothing)
+    Right (ext, subgoals) -> do
+      let errMsgs =
+            if null subgoals
+            then emptyBag
+            else unitBag $ mkErrMsg dflags noSrcSpan neverQualify (ppr $ UnsolvedGoals subgoals)
+      return ((emptyBag, errMsgs), Just ext)
 
 class Exact e where
   -- | When the hypothesis variable passed in matches the goal type,

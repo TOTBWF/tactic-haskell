@@ -35,6 +35,7 @@ import qualified GHCi.UI.Monad as GhciMonad ( args, runStmt, runDecls )
 import GHCi.UI.Monad hiding ( args, runStmt, runDecls )
 import GHCi.UI.Tags
 import GHCi.UI.Info
+import GHCi.InteractiveTactic
 import Debugger
 
 -- The GHC interface
@@ -44,7 +45,7 @@ import GHCi.BreakArray
 import DynFlags
 import ErrUtils hiding (traceCmd)
 import Finder
-import GhcMonad ( modifySession )
+import GhcMonad ( modifySession, withSession )
 import qualified GHC
 import GHC ( LoadHowMuch(..), Target(..),  TargetId(..), InteractiveImport(..),
              TyThing(..), Phase, BreakIndex, Resume, SingleStep, Ghc,
@@ -214,6 +215,7 @@ ghciCommands = map mkCmd [
   ("steplocal", keepGoing stepLocalCmd,         completeIdentifier),
   ("stepmodule",keepGoing stepModuleCmd,        completeIdentifier),
   ("type",      keepGoing' typeOfExpr,          completeExpression),
+  ("tactic",    keepGoing' tacticCmd,           completeIdentifier),
   ("trace",     keepGoing traceCmd,             completeExpression),
   ("unadd",     keepGoingPaths unAddModule,     completeFilename),
   ("undef",     keepGoing undefineMacro,        completeMacro),
@@ -1951,6 +1953,14 @@ typeOfExpr str = handleSourceError GHC.printException $ do
           _            -> (GHC.TM_Inst,    str)
     ty <- GHC.exprType mode expr_str
     printForUser $ sep [text expr_str, nest 2 (dcolon <+> pprTypeForUser ty)]
+
+
+-----------------------------------------------------------------------------
+-- | @:tactic@ command
+tacticCmd :: String -> InputT GHCi ()
+tacticCmd str = handleSourceError GHC.printException $ withSession $ \hsc_env -> do
+  ext <- liftIO $ hscTactic hsc_env str
+  printForUser $ ppr ext
 
 -----------------------------------------------------------------------------
 -- | @:type-at@ command

@@ -7,11 +7,13 @@
 --
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 module Language.Haskell.Tactic.T
-  ( T(..)
+  ( T
+  , runT
   , TacticState(..)
   , TacticError(..)
   , freshName
@@ -25,11 +27,14 @@ import Control.Monad.Fail (MonadFail)
 
 
 import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Outputable (Outputable(..), (<+>), ($+$))
 import qualified Outputable as P
 
 import DynFlags
+import HsExpr
+import HsExtension
 import Name
 import TcRnMonad
 import Type
@@ -42,12 +47,27 @@ data TacticState = TacticState
   , unificationState :: TCvSubst
   }
 
+instance Semigroup TacticState where
+  ts1 <> ts2 = TacticState { boundVars = Map.unionWith (+) (boundVars ts1) (boundVars ts2)
+                           , unificationState = unionTCvSubst (unificationState ts1) (unificationState ts2) }
+
+instance Monoid TacticState where
+  mempty = TacticState { boundVars = Map.empty, unificationState = emptyTCvSubst }
+
 
 -- NOTE: Should I just handle everything as IORefs?
 -- I could handle backtracking state using a custom `catchError`
 
 newtype T a = T { unT :: StateT TacticState (ExceptT TacticError TcM) a }
   deriving (Functor, Applicative, Monad, MonadFail, MonadIO, MonadState TacticState, MonadError TacticError)
+
+runT :: TacticState -> T a -> TcM (Either TacticError a)
+runT st m = runExceptT $ evalStateT (unT m) st
+
+instance MonadExtract Expr T where
+  hole = do
+    nm <- freshName "_x"
+    return $ HsUnboundVar NoExt (TrueExprHole $ occName nm)
 
 instance MonadProvable Judgement T where
   proving j = do
