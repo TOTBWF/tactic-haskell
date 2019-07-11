@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveGeneric #-}
-module Language.Haskell.Tactic.Internal.Telescope
+module Language.Haskell.Tactic.Telescope
   ( Telescope(..)
   , empty
   , singleton
@@ -19,19 +19,18 @@ module Language.Haskell.Tactic.Internal.Telescope
 
 import Prelude hiding (filter, lookup)
 
-import Data.Bifunctor
+import Outputable (Outputable(..))
+import qualified Outputable as P
 
-import Language.Haskell.TH
-import Language.Haskell.TH.Ppr
-import qualified Language.Haskell.TH.PprLib as P
+import Data.Bifunctor
 
 data Telescope v t
   = Empty
   | Snoc (Telescope v t) v t
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
-instance (Ppr v, Ppr t) => Ppr (Telescope v t) where
-  ppr tl = commaSepWith (\(x,t) -> ppr x P.<> P.text "::" P.<> ppr t) (toList tl)
+instance (Outputable v, Outputable t) => Outputable (Telescope v t) where
+  ppr tl = P.sep $ P.punctuate P.comma $ (\(x,t) -> ppr x P.<> P.text "::" P.<> ppr t) <$> toList tl
 
 instance Semigroup (Telescope v t) where
   Empty <> t = t
